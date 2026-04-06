@@ -102,7 +102,7 @@ st.write("### 🔥 Top 4 'Value' Picks")
 cols = st.columns(4)
 for i, pick in enumerate(top_4):
     with cols[i]:
-        st.image(get_team_logo(pick['Team']), width=70)
+display_team_logo(pick['Logo_URL'], pick['Team'])
         st.metric(label=pick['Team'], value=f"{pick['Win']:.1f}%", delta="VALUE FOUND")
         st.caption(f"📅 {pick['Date']}")
 
