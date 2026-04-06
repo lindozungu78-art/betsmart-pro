@@ -37,16 +37,23 @@ def get_dual_data():
     matches = requests.get(f"https://api.football-data.org/v4/competitions/PL/matches?dateFrom={today}&dateTo={next_week}", headers=headers).json().get('matches', [])
     return table, matches
 
-def get_team_logo(name):
-    # Fix names for the Logo API
-    name = name.replace("FC", "").replace("AFC", "").strip()
-    url = f"https://v3.football.api-sports.io/teams?name={name}"
-    headers = {"x-apisports-key": AF_KEY}
+import requests
+import streamlit as st
+
+def display_team_logo(logo_url, team_name):
+    # This is a generic "No Image" placeholder
+    fallback_url = "https://raw.githubusercontent.com/lucasbento/google-maps-logos/master/google-maps-logos.png" # Or any football icon URL
+    
     try:
-        res = requests.get(url, headers=headers).json()
-        return res['response'][0]['team']['logo']
+        # Check if the URL actually works (timeout after 1 second so it doesn't lag)
+        response = requests.head(logo_url, timeout=1)
+        if response.status_code == 200:
+            st.image(logo_url, width=50)
+        else:
+            st.image(fallback_url, width=50)
     except:
-        return "https://via.placeholder.com/100?text=⚽"
+        # If the API fails or link is dead, show the fallback
+        st.image(fallback_url, width=50)
 
 # --- 4. LOADING SCREEN (Fixed with Safety Check) ---
 lottie_anim = load_lottieurl("https://lottie.host/80f76921-950c-4573-9029-79883500d418/Aas8Zk5XmS.json")
