@@ -104,24 +104,45 @@ with st.expander("🏟️ View Live Scores, Dates & Results", expanded=False):
 
 st.divider()
 
-# --- 7. ZAR SYSTEM 3/4 CALCULATOR ---
+# --- 7. ZAR SYSTEM 3/4 CALCULATOR (Updated with Profit Separation) ---
 st.header("💰 ZAR System 3/4 Calculator")
 default_odds = st.session_state.get('selected_odds', [1.57, 1.59, 2.09, 3.30])
 st.info(f"Analyzing: **{st.session_state.get('selected_group', 'Manual Entry')}**")
 
 c1, c2 = st.columns(2)
 with c1:
-    total_stake = st.number_input("Total Budget (ZAR)", value=100.0)
+    total_stake = st.number_input("Total Wager (ZAR)", min_value=10.0, value=100.0, step=10.0)
     o1 = st.number_input("Team 1 Odds", value=float(default_odds[0]))
     o2 = st.number_input("Team 2 Odds", value=float(default_odds[1]))
 with c2:
     o3 = st.number_input("Team 3 Odds", value=float(default_odds[2]))
     o4 = st.number_input("Team 4 Odds", value=float(default_odds[3]))
 
-# Original 3/4 Math
+# Original 3/4 Math (4 Treble Combos)
 spb = total_stake / 4
 combos = [o1*o2*o3*spb, o1*o2*o4*spb, o1*o3*o4*spb, o2*o3*o4*spb]
 
-res1, res2 = st.columns(2)
-res1.success(f"### Max Payout\nR{sum(combos):.2f}")
-res2.warning(f"### Safety Net\nR{min(combos):.2f}")
+max_payout = sum(combos)
+min_payout = min(combos) # Safety Net
+
+st.divider()
+
+# --- NEW: SEPARATED RESULTS ---
+res_col1, res_col2, res_col3 = st.columns(3)
+
+# 1. THE WAGER (What you spent)
+res_col1.metric("Total Wager", f"R{total_stake:.2f}")
+
+# 2. THE MAX SCENARIO (4/4 Wins)
+with res_col2:
+    st.success("### Max Win (4/4)")
+    st.write(f"**Total Payout:** R{max_payout:.2f}")
+    st.write(f"**Net Profit:** R{max_payout - total_stake:.2f}")
+
+# 3. THE SAFETY NET (3/4 Wins)
+with res_col3:
+    st.warning("### Safety Net (3/4)")
+    st.write(f"**Min Payout:** R{min_payout:.2f}")
+    st.write(f"**Net Profit/Loss:** R{min_payout - total_stake:.2f}")
+
+st.caption("Note: Net Profit = Total Payout minus your original Wager.")
