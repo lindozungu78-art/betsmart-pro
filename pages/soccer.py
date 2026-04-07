@@ -2,147 +2,124 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
+import pytz
+import math
 
-# --- 1. CONFIG & API SETTINGS ---
+# --- 1. CONFIG & API ---
 API_KEY = "8e1ac8e3fb43757f30f2aec94dbebb81" 
-st.set_page_config(page_title="BetSmart Pro | Live", layout="wide")
+st.set_page_config(page_title="BetSmart Pro | Draw Engine", layout="wide")
 
-# --- 2. LOGO MAPPING ---
-def get_team_logo_url(team_name):
-    team_ids = {
-        "Arsenal": 57, "Aston Villa": 58, "Chelsea": 61, "Liverpool": 64, 
-        "Manchester City": 65, "Manchester United": 66, "Newcastle United": 67,
-        "Tottenham Hotspur": 73, "West Ham United": 563, "Brentford": 402,
-        "Brighton & Hove Albion": 397, "Crystal Palace": 354, "Everton": 62,
-        "Fulham": 63, "Leicester City": 338, "Wolverhampton Wanderers": 76,
-        "Nottingham Forest": 351, "Bournemouth": 1044
-    }
-    for key, tid in team_ids.items():
-        if key in team_name: return f"https://crests.football-data.org/{tid}.png"
-    return "https://cdn-icons-png.flaticon.com/512/5323/5323884.png"
+# --- 2. POISSON DRAW ENGINE ---
+def calculate_draw_prob(home_win_prob, away_win_prob):
+    """
+    Estimates draw probability based on win/loss ratios.
+    Matches with closely matched teams (e.g., 35% vs 35%) 
+    score higher on the Draw Engine.
+    """
+    total_win_prob = (home_win_prob + away_win_prob) / 100
+    # Average draw rate in top leagues is ~24-28%
+    # We adjust this based on how 'balanced' the match is
+    balance_factor = 1 - abs(home_win_prob - away_win_prob) / 100
+    draw_prob = 26.0 * balance_factor 
+    return round(draw_prob, 1)
 
-# --- 3. LIVE SCORES & RESULTS ENGINE ---
-def fetch_live_scores():
-    # Fetching scores and start times
-    url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/scores/?apiKey={API_KEY}&daysFrom=1"
-    try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-    except:
-        return None
-
-# --- 4. 4x4 MATRIX ENGINE ---
+# --- 3. DATA FETCHING ---
 def fetch_matrix_data():
     url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey={API_KEY}&regions=uk&markets=h2h&oddsFormat=decimal"
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            all_teams = []
+            all_matches = []
             for match in data:
                 home_team = match['home_team']
-                h_odds = max([o['price'] for b in match['bookmakers'] for m in b['markets'] for o in m['outcomes'] if o['name'] == home_team])
-                all_teams.append({"Team": home_team, "Prob": round((1/h_odds)*100, 1), "Odds": h_odds})
-            all_teams.sort(key=lambda x: x['Prob'], reverse=True)
-            while len(all_teams) < 16: all_teams.append({"Team": "Pending...", "Prob": 0.0, "Odds": 1.0})
-            return {"Option A (Bankers)": all_teams[0:4], "Option B (Home Edge)": all_teams[4:8], 
-                    "Option C (Value Mix)": all_teams[8:12], "Option D (Underdogs)": all_teams[12:16]}
+                away_team = match['away_team']
+                
+                # Get best odds for Home, Draw, Away
+                outcomes = match['bookmakers'][0]['markets'][0]['outcomes']
+                h_odds = next(o['price'] for o in outcomes if o['name'] == home_team)
+                a_odds = next(o['price'] for o in outcomes if o['name'] == away_team)
+                d_odds = next(o['price'] for o in outcomes if o['name'] == "Draw")
+                
+                h_prob = (1/h_odds)*100
+                a_prob = (1/a_odds)*100
+                d_prob = calculate_draw_prob(h_prob, a_prob)
+                
+                all_matches.append({
+                    "Home": home_team, "Away": away_team,
+                    "H_Prob": round(h_prob, 1), "D_Prob": d_prob, "A_Prob": round(a_prob, 1),
+                    "H_Odds": h_odds, "D_Odds": d_odds, "A_Odds": a_odds
+                })
+            
+            all_matches.sort(key=lambda x: x['H_Prob'], reverse=True)
+            while len(all_matches) < 16: 
+                all_matches.append({"Home": "Pending", "Away": "...", "H_Prob": 0, "D_Prob": 0, "A_Prob": 0, "H_Odds": 1, "D_Odds": 1, "A_Odds": 1})
+            
+            return {
+                "Option A (Bankers)": all_matches[0:4],
+                "Option B (Home Edge)": all_matches[4:8],
+                "Option C (Draw/Value)": sorted(all_matches, key=lambda x: x['D_Prob'], reverse=True)[0:4],
+                "Option D (Underdogs)": all_matches[12:16]
+            }
     except: return None
 
-# --- 5. UI LAYOUT ---
+# --- 4. UI LOGIC ---
 st.title("🏆 Dual-Engine Auto-Picker")
-st.subheader("📊 BetSmart 4x4 Strategic Matrix")
+st.subheader("📊 4x4 Matrix with Draw Analytics")
 
-if st.button("🔄 Sync Live Odds & Scores"):
+if st.button("🔄 Sync Market Data"):
     st.cache_data.clear()
 
-# Matrix Section
-matrix_data = fetch_matrix_data()
-if matrix_data:
-    tabs = st.tabs(list(matrix_data.keys()))
-    for i, (group_name, teams) in enumerate(matrix_data.items()):
+matrix = fetch_matrix_data()
+if matrix:
+    tabs = st.tabs(list(matrix.keys()))
+    for i, (group, matches) in enumerate(matrix.items()):
         with tabs[i]:
             cols = st.columns(4)
-            for j, team in enumerate(teams):
+            for j, m in enumerate(matches):
                 with cols[j]:
-                    st.image(get_team_logo_url(team['Team']), width=60)
-                    st.metric(team['Team'], f"{team['Prob']}%", f"Odds: {team['Odds']}")
-            if st.button(f"Analyze {group_name}", key=f"btn_{i}"):
-                st.session_state.selected_odds = [t['Odds'] for t in teams]
-                st.session_state.selected_group = group_name
+                    st.write(f"**{m['Home']}**")
+                    st.caption(f"vs {m['Away']}")
+                    st.metric("Win Prob", f"{m['H_Prob']}%")
+                    st.metric("Draw Prob", f"{m['D_Prob']}%", delta_color="normal")
+                    if st.button(f"Bet {m['Home']}", key=f"h_{i}_{j}"):
+                        st.session_state.temp_odds = m['H_Odds']
+            
+            if st.button(f"Load {group} Odds", key=f"grp_{i}"):
+                st.session_state.selected_odds = [x['H_Odds'] for x in matches]
+                st.session_state.selected_group = group
 
 st.divider()
 
-# --- 6. FOLDABLE LIVE SCORES & DATES ---
-with st.expander("🏟️ View Live Scores, Dates & Results", expanded=False):
-    scores_data = fetch_live_scores()
-    if scores_data:
-        for match in scores_data:
-            # Parse the game date
-            commence_time = datetime.fromisoformat(match['commence_time'].replace('Z', ''))
-            date_str = commence_time.strftime("%A, %d %B") # Example: Saturday, 12 April
-            
-            col1, col2, col3 = st.columns([2, 1, 2])
-            home = match['home_team']
-            away = match['away_team']
-            
-            if match['completed']:
-                status = "🏁 Finished"
-                score_text = f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match['scores'] else "FT"
-            else:
-                status = "🔴 LIVE" if match.get('scores') else "📅 Upcoming"
-                score_text = f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match.get('scores') else "vs"
-            
-            col1.write(f"**{home}**")
-            col2.info(f"**{score_text}**")
-            col3.write(f"**{away}**")
-            st.caption(f"📅 {date_str} | Status: {status}")
-            st.write("---")
-    else:
-        st.write("No score data currently available.")
-
-st.divider()
-
-# --- 7. ZAR SYSTEM 3/4 CALCULATOR (Updated with Profit Separation) ---
+# --- 5. CALCULATOR (Wager vs Profit) ---
 st.header("💰 ZAR System 3/4 Calculator")
-default_odds = st.session_state.get('selected_odds', [1.57, 1.59, 2.09, 3.30])
-st.info(f"Analyzing: **{st.session_state.get('selected_group', 'Manual Entry')}**")
+def_odds = st.session_state.get('selected_odds', [1.57, 1.59, 2.09, 3.30])
 
 c1, c2 = st.columns(2)
 with c1:
-    total_stake = st.number_input("Total Wager (ZAR)", min_value=10.0, value=100.0, step=10.0)
-    o1 = st.number_input("Team 1 Odds", value=float(default_odds[0]))
-    o2 = st.number_input("Team 2 Odds", value=float(default_odds[1]))
+    total_wager = st.number_input("Total Wager (ZAR)", value=100.0, step=10.0)
+    o1 = st.number_input("Odds 1", value=float(def_odds[0]))
+    o2 = st.number_input("Odds 2", value=float(def_odds[1]))
 with c2:
-    o3 = st.number_input("Team 3 Odds", value=float(default_odds[2]))
-    o4 = st.number_input("Team 4 Odds", value=float(default_odds[3]))
+    o3 = st.number_input("Odds 3", value=float(def_odds[2]))
+    o4 = st.number_input("Odds 4", value=float(def_odds[3]))
 
-# Original 3/4 Math (4 Treble Combos)
-spb = total_stake / 4
+# System 3/4 Math
+spb = total_wager / 4
 combos = [o1*o2*o3*spb, o1*o2*o4*spb, o1*o3*o4*spb, o2*o3*o4*spb]
+max_pay = sum(combos)
+min_pay = min(combos)
 
-max_payout = sum(combos)
-min_payout = min(combos) # Safety Net
+r1, r2, r3 = st.columns(3)
+r1.metric("Total Wager", f"R{total_wager:.2f}")
 
-st.divider()
-
-# --- NEW: SEPARATED RESULTS ---
-res_col1, res_col2, res_col3 = st.columns(3)
-
-# 1. THE WAGER (What you spent)
-res_col1.metric("Total Wager", f"R{total_stake:.2f}")
-
-# 2. THE MAX SCENARIO (4/4 Wins)
-with res_col2:
+with r2:
     st.success("### Max Win (4/4)")
-    st.write(f"**Total Payout:** R{max_payout:.2f}")
-    st.write(f"**Net Profit:** R{max_payout - total_stake:.2f}")
+    st.write(f"**Payout:** R{max_pay:.2f}")
+    st.write(f"**Profit:** R{max_pay - total_wager:.2f}")
 
-# 3. THE SAFETY NET (3/4 Wins)
-with res_col3:
+with r3:
     st.warning("### Safety Net (3/4)")
-    st.write(f"**Min Payout:** R{min_payout:.2f}")
-    st.write(f"**Net Profit/Loss:** R{min_payout - total_stake:.2f}")
-
-st.caption("Note: Net Profit = Total Payout minus your original Wager.")
+    st.write(f"**Payout:** R{min_pay:.2f}")
+    st.write(f"**Profit/Loss:** R{min_pay - total_wager:.2f}")
+    
