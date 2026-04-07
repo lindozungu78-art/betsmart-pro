@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+from datetime import datetime
 
 # --- 1. CONFIG & API SETTINGS ---
 API_KEY = "8e1ac8e3fb43757f30f2aec94dbebb81" 
@@ -22,6 +23,7 @@ def get_team_logo_url(team_name):
 
 # --- 3. LIVE SCORES & RESULTS ENGINE ---
 def fetch_live_scores():
+    # Fetching scores and start times
     url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/scores/?apiKey={API_KEY}&daysFrom=1"
     try:
         response = requests.get(url, timeout=5)
@@ -52,7 +54,6 @@ def fetch_matrix_data():
 st.title("🏆 Dual-Engine Auto-Picker")
 st.subheader("📊 BetSmart 4x4 Strategic Matrix")
 
-# Sync Button
 if st.button("🔄 Sync Live Odds & Scores"):
     st.cache_data.clear()
 
@@ -73,11 +74,15 @@ if matrix_data:
 
 st.divider()
 
-# --- NEW: FOLDABLE LIVE SCORES SECTION ---
-with st.expander("🏟️ View Live Scores & Match Results", expanded=False):
+# --- 6. FOLDABLE LIVE SCORES & DATES ---
+with st.expander("🏟️ View Live Scores, Dates & Results", expanded=False):
     scores_data = fetch_live_scores()
     if scores_data:
         for match in scores_data:
+            # Parse the game date
+            commence_time = datetime.fromisoformat(match['commence_time'].replace('Z', ''))
+            date_str = commence_time.strftime("%A, %d %B") # Example: Saturday, 12 April
+            
             col1, col2, col3 = st.columns([2, 1, 2])
             home = match['home_team']
             away = match['away_team']
@@ -86,20 +91,20 @@ with st.expander("🏟️ View Live Scores & Match Results", expanded=False):
                 status = "🏁 Finished"
                 score_text = f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match['scores'] else "FT"
             else:
-                status = "🔴 LIVE"
-                score_text = f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match['scores'] else "0 - 0"
+                status = "🔴 LIVE" if match.get('scores') else "📅 Upcoming"
+                score_text = f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match.get('scores') else "vs"
             
             col1.write(f"**{home}**")
             col2.info(f"**{score_text}**")
             col3.write(f"**{away}**")
-            st.caption(f"Status: {status}")
+            st.caption(f"📅 {date_str} | Status: {status}")
             st.write("---")
     else:
-        st.write("No live matches currently or data unavailable.")
+        st.write("No score data currently available.")
 
 st.divider()
 
-# --- 6. ZAR SYSTEM 3/4 CALCULATOR ---
+# --- 7. ZAR SYSTEM 3/4 CALCULATOR ---
 st.header("💰 ZAR System 3/4 Calculator")
 default_odds = st.session_state.get('selected_odds', [1.57, 1.59, 2.09, 3.30])
 st.info(f"Analyzing: **{st.session_state.get('selected_group', 'Manual Entry')}**")
