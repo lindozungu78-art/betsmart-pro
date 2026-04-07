@@ -22,7 +22,6 @@ def get_team_logo_url(team_name):
 
 # --- 3. LIVE SCORES & RESULTS ENGINE ---
 def fetch_live_scores():
-    # Calling the scores endpoint from The Odds API
     url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/scores/?apiKey={API_KEY}&daysFrom=1"
     try:
         response = requests.get(url, timeout=5)
@@ -74,18 +73,15 @@ if matrix_data:
 
 st.divider()
 
-# --- NEW: LIVE SCORES & RESULTS SECTION ---
-st.header("⚽ Live Scores & Results")
-scores_data = fetch_live_scores()
-
-if scores_data:
-    for match in scores_data:
-        with st.container():
+# --- NEW: FOLDABLE LIVE SCORES SECTION ---
+with st.expander("🏟️ View Live Scores & Match Results", expanded=False):
+    scores_data = fetch_live_scores()
+    if scores_data:
+        for match in scores_data:
             col1, col2, col3 = st.columns([2, 1, 2])
             home = match['home_team']
             away = match['away_team']
             
-            # Formatting the score
             if match['completed']:
                 status = "🏁 Finished"
                 score_text = f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match['scores'] else "FT"
@@ -97,8 +93,9 @@ if scores_data:
             col2.info(f"**{score_text}**")
             col3.write(f"**{away}**")
             st.caption(f"Status: {status}")
-else:
-    st.write("No live matches currently or data unavailable.")
+            st.write("---")
+    else:
+        st.write("No live matches currently or data unavailable.")
 
 st.divider()
 
