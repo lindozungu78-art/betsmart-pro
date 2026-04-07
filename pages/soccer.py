@@ -1,87 +1,110 @@
 import streamlit as st
 import pandas as pd
 import requests
-from scipy.stats import poisson
 
-# --- 1. NEW LOGO FALLBACK SYSTEM ---
-def display_team_logo(logo_url, team_name):
-    """Displays a team logo with a fallback if the link is broken."""
-    fallback_url = "https://cdn-icons-png.flaticon.com/512/5323/5323884.png" # Soccer ball icon
+# --- 1. CONFIG & API SETTINGS ---
+# Using your provided API Key
+API_KEY = "8e1ac8e3fb43757f30f2aec94dbebb81" 
+st.set_page_config(page_title="BetSmart Pro | 4x4 Matrix", layout="wide")
+
+# --- 2. LOGO FALLBACK ---
+def display_team_logo():
+    icon_url = "https://cdn-icons-png.flaticon.com/512/5323/5323884.png"
+    st.image(icon_url, width=50)
+
+# --- 3. 4x4 MATRIX ENGINE ---
+def fetch_matrix_data():
+    # Fetching EPL (Premier League) odds as the primary source
+    url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey={API_KEY}&regions=uk&markets=h2h&oddsFormat=decimal"
     try:
-        # Check if URL is valid and reachable
-        if pd.isna(logo_url) or logo_url == "":
-            st.image(fallback_url, width=70)
-        else:
-            response = requests.get(logo_url, timeout=2)
-            if response.status_code == 200:
-                st.image(logo_url, width=70)
-            else:
-                st.image(fallback_url, width=70)
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            all_teams = []
+            for match in data:
+                home_team = match['home_team']
+                # Get best home win odds available in the market
+                h_odds = max([o['price'] for b in match['bookmakers'] for m in b['markets'] for o in m['outcomes'] if o['name'] == home_team])
+                prob = (1 / h_odds) * 100
+                all_teams.append({"Team": home_team, "Prob": round(prob, 1), "Odds": h_odds})
+            
+            # Sort from highest probability to lowest
+            all_teams.sort(key=lambda x: x['Prob'], reverse=True)
+            
+            # Safety check to ensure we have at least 16 teams
+            if len(all_teams) < 16:
+                # Add dummy placeholders if league has fewer active matches this week
+                while len(all_teams) < 16:
+                    all_teams.append({"Team": "Pending Fixture", "Prob": 0.0, "Odds": 1.0})
+
+            # Divide into 4 distinct strategy options
+            matrix = {
+                "Option A (Bankers)": all_teams[0:4],
+                "Option B (Home Edge)": all_teams[4:8],
+                "Option C (Value Mix)": all_teams[8:12],
+                "Option D (Underdogs)": all_teams[12:16]
+            }
+            return matrix
     except:
-        st.image(fallback_url, width=70)
+        return None
 
-# --- 2. APP CONFIG & STYLE ---
-st.set_page_config(page_title="BetSmart Pro", layout="wide")
-st.title("🏆 Dual-Engine Auto-Picker")
+# --- 4. UI LAYOUT ---
+st.title("📊 BetSmart 4x4 Strategic Matrix")
+st.write(f"Synced with The-Odds-API | Key: {API_KEY[:4]}****")
 
-# --- 3. SOCCER PREDICTOR LOGIC (POISSON) ---
-def get_predictions():
-    # This mimics your API data fetching
-    # Using your current high-confidence picks as the baseline
-    data = [
-        {"Team": "Liverpool FC", "Prob": 65.9, "Date": "2026-04-11", "Logo_URL": "https://crests.football-data.org/64.png"},
-        {"Team": "West Ham United FC", "Prob": 65.1, "Date": "2026-04-10", "Logo_URL": "https://crests.football-data.org/563.png"},
-        {"Team": "Manchester United FC", "Prob": 62.8, "Date": "2026-04-13", "Logo_URL": "https://crests.football-data.org/66.png"},
-        {"Team": "Brentford FC", "Prob": 61.0, "Date": "2026-04-11", "Logo_URL": "https://crests.football-data.org/402.png"}
-    ]
-    return data
+# Refresh button to trigger new API call
+if st.button("🔄 Sync Live Market Odds"):
+    st.cache_data.clear()
 
-picks = get_predictions()
+matrix_data = fetch_matrix_data()
 
-st.subheader("🔥 Top 4 'Value' Picks")
-cols = st.columns(4)
+if matrix_data:
+    # Use Tabs for a clean mobile experience
+    tabs = st.tabs(list(matrix_data.keys()))
+    
+    for i, (group_name, teams) in enumerate(matrix_data.items()):
+        with tabs[i]:
+            st.subheader(f"Ranked Strategy: {group_name}")
+            cols = st.columns(4)
+            for j, team in enumerate(teams):
+                with cols[j]:
+                    display_team_logo()
+                    st.metric(team['Team'], f"{team['Prob']}%", f"Odds: {team['Odds']}")
+            
+            # Button to load this specific group into the ZAR calculator
+            if st.button(f"Load {group_name} into Calculator", key=f"btn_{i}"):
+                st.session_state.selected_odds = [t['Odds'] for t in teams]
+                st.session_state.selected_group = group_name
+                st.success(f"{group_name} loaded!")
 
-for i, pick in enumerate(picks):
-    with cols[i]:
-        display_team_logo(pick['Logo_URL'], pick['Team'])
-        st.metric(label=pick['Team'], value=f"{pick['Prob']}%")
-        st.caption(f"📅 {pick['Date']}")
-        st.write("✅ VALUE FOUND")
+else:
+    st.error("API Error: Verify your key or check if the league is out of season.")
 
 st.divider()
 
-# --- 4. ZAR SYSTEM 3/4 CALCULATOR ---
+# --- 5. ZAR SYSTEM 3/4 CALCULATOR ---
 st.header("💰 ZAR System 3/4 Calculator")
-st.info("Strategy: Win even if one team lets you down (Safety Net).")
 
-with st.container():
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        total_stake = st.number_input("Total Budget (ZAR)", min_value=10.0, value=100.0, step=10.0)
-        odds1 = st.number_input("Game 1 Odds", value=1.57)
-        odds2 = st.number_input("Game 2 Odds", value=1.59)
-    
-    with col2:
-        odds3 = st.number_input("Game 3 Odds", value=2.09)
-        odds4 = st.number_input("Game 4 Odds", value=3.30)
+# Load values from session state (if button clicked) or use defaults
+default_odds = st.session_state.get('selected_odds', [1.50, 1.60, 2.10, 3.30])
+current_group = st.session_state.get('selected_group', "Manual Entry")
 
-    # Calculation logic for 3/4 system (4 combinations)
-    stake_per_bet = total_stake / 4
-    
-    # Combinations (The 4 Trebles)
-    c1 = odds1 * odds2 * odds3 * stake_per_bet
-    c2 = odds1 * odds2 * odds4 * stake_per_bet
-    c3 = odds1 * odds3 * odds4 * stake_per_bet
-    c4 = odds2 * odds3 * odds4 * stake_per_bet
-    
-    max_payout = c1 + c2 + c3 + c4
-    min_safety_return = min(c1, c2, c3, c4) # Worst case if 3 win
+st.info(f"Analyzing: **{current_group}**")
 
-    st.divider()
-    
-    res1, res2 = st.columns(2)
-    res1.success(f"### Max Payout\nR{max_payout:.2f}")
-    res2.warning(f"### Safety Net\nR{min_safety_return:.2f}")
+col1, col2 = st.columns(2)
+with col1:
+    total_stake = st.number_input("Total Stake (ZAR)", value=100.0, step=10.0)
+    o1 = st.number_input("Team 1 Odds", value=float(default_odds[0]))
+    o2 = st.number_input("Team 2 Odds", value=float(default_odds[1]))
+with col2:
+    o3 = st.number_input("Team 3 Odds", value=float(default_odds[2]))
+    o4 = st.number_input("Team 4 Odds", value=float(default_odds[3]))
 
-    st.write(f"**Instructions:** On your betting app, choose **'Trebles (x4)'** and enter a stake of **R{stake_per_bet:.2f}** per bet.")
+# System 3/4 Math (4 unique treble combinations)
+stake_per_bet = total_stake / 4
+combos = [o1*o2*o3*stake_per_bet, o1*o2*o4*stake_per_bet, 
+          o1*o3*o4*stake_per_bet, o2*o3*o4*stake_per_bet]
+
+res1, res2 = st.columns(2)
+res1.success(f"### Max Payout\nR{sum(combos):.2f}")
+res2.warning(f"### Safety Net (3/4 Win)\nR{min(combos):.2f}")
