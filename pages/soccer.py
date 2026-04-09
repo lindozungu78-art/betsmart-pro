@@ -3,37 +3,37 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import math
-import numpy as np
+import pytz
 
 # --- 1. CONFIG & API SETTINGS ---
 API_KEY = "8e1ac8e3fb43757f30f2aec94dbebb81" 
-st.set_page_config(page_title="BetSmart Pro | Advanced Analytics", layout="wide")
+st.set_page_config(page_title="BetSmart Pro | Master Engine", layout="wide")
 
-# --- 2. ADVANCED TEAM STATISTICS CACHE ---
-@st.cache_data(ttl=3600)
-def get_team_stats():
-    """Fetch team performance metrics"""
-    return {
-        "Manchester City": {"attack": 92, "defense": 88, "form": 9.2, "home_advantage": 1.4},
-        "Liverpool": {"attack": 89, "defense": 85, "form": 8.7, "home_advantage": 1.3},
-        "Arsenal": {"attack": 86, "defense": 84, "form": 8.5, "home_advantage": 1.3},
-        "Chelsea": {"attack": 82, "defense": 79, "form": 7.8, "home_advantage": 1.2},
-        "Manchester United": {"attack": 80, "defense": 77, "form": 7.5, "home_advantage": 1.2},
-        "Tottenham Hotspur": {"attack": 83, "defense": 75, "form": 7.7, "home_advantage": 1.2},
-        "Newcastle United": {"attack": 78, "defense": 80, "form": 7.9, "home_advantage": 1.1},
-        "Aston Villa": {"attack": 79, "defense": 72, "form": 7.4, "home_advantage": 1.1},
-        "Brighton & Hove Albion": {"attack": 76, "defense": 74, "form": 7.3, "home_advantage": 1.1},
-        "West Ham United": {"attack": 74, "defense": 71, "form": 7.0, "home_advantage": 1.1},
-        "Brentford": {"attack": 73, "defense": 70, "form": 6.8, "home_advantage": 1.0},
-        "Fulham": {"attack": 71, "defense": 69, "form": 6.7, "home_advantage": 1.0},
-        "Crystal Palace": {"attack": 70, "defense": 68, "form": 6.6, "home_advantage": 1.0},
-        "Wolverhampton Wanderers": {"attack": 69, "defense": 67, "form": 6.5, "home_advantage": 1.0},
-        "Everton": {"attack": 67, "defense": 69, "form": 6.4, "home_advantage": 1.0},
-        "Nottingham Forest": {"attack": 66, "defense": 68, "form": 6.3, "home_advantage": 0.9},
-        "Bournemouth": {"attack": 68, "defense": 65, "form": 6.2, "home_advantage": 0.9},
-        "Leicester City": {"attack": 69, "defense": 66, "form": 6.1, "home_advantage": 0.9}
-    }
+# --- 2. TIMEZONE CONFIGURATION ---
+SAST = pytz.timezone('Africa/Johannesburg')
+UTC = pytz.UTC
 
+def convert_to_sast(utc_time_str):
+    """Convert UTC time string to SAST"""
+    try:
+        # Parse UTC time
+        if utc_time_str:
+            utc_time = datetime.fromisoformat(utc_time_str.replace('Z', '+00:00'))
+            # Convert to SAST
+            sast_time = utc_time.astimezone(SAST)
+            return sast_time
+    except:
+        pass
+    return None
+
+def format_match_time(utc_time_str):
+    """Format match time for display"""
+    sast_time = convert_to_sast(utc_time_str)
+    if sast_time:
+        return sast_time.strftime("%d %b %Y | %H:%M")
+    return "Time TBD"
+
+# --- 3. LOGO MAPPING SYSTEM ---
 def get_team_logo_url(team_name):
     team_ids = {
         "Arsenal": 57, "Aston Villa": 58, "Chelsea": 61, "Liverpool": 64, 
@@ -41,380 +41,335 @@ def get_team_logo_url(team_name):
         "Tottenham Hotspur": 73, "West Ham United": 563, "Brentford": 402,
         "Brighton & Hove Albion": 397, "Crystal Palace": 354, "Everton": 62,
         "Fulham": 63, "Leicester City": 338, "Wolverhampton Wanderers": 76,
-        "Nottingham Forest": 351, "Bournemouth": 1044
+        "Nottingham Forest": 351, "Bournemouth": 1044, "Southampton": 340,
+        "Ipswich Town": 389, "Leeds United": 341
     }
     for key, tid in team_ids.items():
         if key in team_name: 
             return f"https://crests.football-data.org/{tid}.png"
     return "https://cdn-icons-png.flaticon.com/512/5323/5323884.png"
 
-# --- 3. ADVANCED POISSON & EXPECTED GOALS MODEL ---
-def calculate_xg(home_team, away_team, team_stats):
-    """Calculate Expected Goals using team statistics"""
-    home_stats = team_stats.get(home_team, {"attack": 70, "defense": 70, "home_advantage": 1.0})
-    away_stats = team_stats.get(away_team, {"attack": 70, "defense": 70, "home_advantage": 1.0})
-    
-    league_avg = 1.35  # Average goals per team per match
-    
-    # Calculate expected goals
-    home_xg = (home_stats['attack'] / 100) * (away_stats['defense'] / 100) * league_avg * home_stats['home_advantage']
-    away_xg = (away_stats['attack'] / 100) * (home_stats['defense'] / 100) * league_avg
-    
-    return home_xg, away_xg
+# --- 4. ADVANCED POISSON MODEL ---
+def calculate_draw_prob(h_prob, a_prob):
+    """Calculate draw probability based on team strength"""
+    balance_factor = 1 - abs(h_prob - a_prob) / 100
+    return round(26.0 * balance_factor, 1)
 
-def poisson_probability(actual, mean):
-    """Calculate Poisson probability"""
-    if mean == 0:
-        return 0
-    return (math.exp(-mean) * mean ** actual) / math.factorial(actual)
+def calculate_match_strength(home_team, away_team):
+    """Calculate team strength based on historical performance"""
+    strength_ratings = {
+        "Manchester City": 95, "Liverpool": 92, "Arsenal": 89, "Chelsea": 85,
+        "Manchester United": 83, "Tottenham Hotspur": 82, "Newcastle United": 80,
+        "Aston Villa": 78, "Brighton & Hove Albion": 76, "West Ham United": 75,
+        "Brentford": 73, "Fulham": 72, "Crystal Palace": 70, "Wolverhampton Wanderers": 69,
+        "Everton": 68, "Nottingham Forest": 67, "Bournemouth": 66, "Leicester City": 65
+    }
+    
+    home_strength = strength_ratings.get(home_team, 70)
+    away_strength = strength_ratings.get(away_team, 70)
+    
+    return home_strength, away_strength
 
-def calculate_match_probabilities(home_team, away_team, team_stats):
-    """Calculate win/draw/loss probabilities using Poisson distribution"""
-    home_xg, away_xg = calculate_xg(home_team, away_team, team_stats)
-    
-    # Calculate probabilities for different scorelines
-    max_goals = 8
-    home_win_prob = 0
-    draw_prob = 0
-    away_win_prob = 0
-    
-    for i in range(max_goals + 1):
-        for j in range(max_goals + 1):
-            prob = poisson_probability(i, home_xg) * poisson_probability(j, away_xg)
-            if i > j:
-                home_win_prob += prob
-            elif i == j:
-                draw_prob += prob
-            else:
-                away_win_prob += prob
-    
-    # Adjust for draw probability using empirical data
-    draw_prob = draw_prob * 0.92  # Slight adjustment based on historical data
-    
-    # Normalize
-    total = home_win_prob + draw_prob + away_win_prob
-    if total > 0:
-        home_win_prob = (home_win_prob / total) * 100
-        draw_prob = (draw_prob / total) * 100
-        away_win_prob = (away_win_prob / total) * 100
-    else:
-        home_win_prob = draw_prob = away_win_prob = 33.33
-    
-    return home_win_prob, draw_prob, away_win_prob
-
-def calculate_expected_value(odds, probability):
-    """Calculate Expected Value for a bet"""
-    if odds <= 0 or probability <= 0:
-        return -1
-    return (odds * (probability / 100)) - 1
-
-def kelly_criterion(odds, probability, bankroll=1000):
-    """Calculate Kelly Criterion bet sizing"""
-    b = odds - 1  # Decimal odds to fractional
-    p = probability / 100
-    q = 1 - p
-    
-    if b <= 0 or p <= 0 or p >= 1:
-        return 0
-    
-    f = (p * b - q) / b
-    # Use fractional Kelly for safety (25% of optimal)
-    return max(0, f * 0.25 * bankroll)
-
-# --- 4. DATA FETCHING WITH ENHANCED METRICS ---
+# --- 5. DATA FETCHING ---
 @st.cache_data(ttl=300)
 def fetch_data(endpoint):
+    """Fetch data from API"""
     url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/{endpoint}/?apiKey={API_KEY}&regions=uk&markets=h2h&oddsFormat=decimal"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             return response.json()
         else:
-            st.warning(f"API Error: {response.status_code}")
             return None
-    except Exception as e:
-        st.warning(f"Connection error: {str(e)}")
+    except:
         return None
 
-# --- 5. VALUE BET DETECTOR ---
-def find_value_bets(matches_data, team_stats):
-    """Identify value betting opportunities"""
-    value_bets = []
-    
-    for match in matches_data:
-        try:
-            home = match.get('Home', '')
-            away = match.get('Away', '')
-            
-            if not home or not away:
-                continue
-                
-            # Get odds from match data
-            h_odds = match.get('H_Odds', 2.0)
-            d_odds = match.get('D_Odds', 3.2)
-            a_odds = match.get('A_Odds', 2.0)
-            
-            # Skip if odds are invalid
-            if h_odds <= 1.01 or d_odds <= 1.01 or a_odds <= 1.01:
-                continue
-            
-            # Calculate true probabilities
-            home_prob, draw_prob, away_prob = calculate_match_probabilities(home, away, team_stats)
-            
-            # Calculate EV for each outcome
-            home_ev = calculate_expected_value(h_odds, home_prob)
-            draw_ev = calculate_expected_value(d_odds, draw_prob)
-            away_ev = calculate_expected_value(a_odds, away_prob)
-            
-            # Kelly stake recommendations (using 10% of bankroll as max)
-            bankroll = 1000
-            home_stake = min(kelly_criterion(h_odds, home_prob, bankroll), bankroll * 0.1)
-            draw_stake = min(kelly_criterion(d_odds, draw_prob, bankroll), bankroll * 0.1)
-            away_stake = min(kelly_criterion(a_odds, away_prob, bankroll), bankroll * 0.1)
-            
-            # Add to value bets if positive EV (at least 2%)
-            if home_ev > 0.02:
-                value_bets.append({
-                    "match": f"{home} vs {away}",
-                    "bet": f"{home} to Win",
-                    "odds": round(h_odds, 2),
-                    "true_prob": round(home_prob, 1),
-                    "market_prob": round((1/h_odds)*100, 1),
-                    "ev": round(home_ev * 100, 1),
-                    "suggested_stake": round(home_stake, 2),
-                    "confidence": "HIGH" if home_ev > 0.10 else "MEDIUM"
-                })
-            
-            if draw_ev > 0.02:
-                value_bets.append({
-                    "match": f"{home} vs {away}",
-                    "bet": "Draw",
-                    "odds": round(d_odds, 2),
-                    "true_prob": round(draw_prob, 1),
-                    "market_prob": round((1/d_odds)*100, 1),
-                    "ev": round(draw_ev * 100, 1),
-                    "suggested_stake": round(draw_stake, 2),
-                    "confidence": "HIGH" if draw_ev > 0.10 else "MEDIUM"
-                })
-            
-            if away_ev > 0.02:
-                value_bets.append({
-                    "match": f"{home} vs {away}",
-                    "bet": f"{away} to Win",
-                    "odds": round(a_odds, 2),
-                    "true_prob": round(away_prob, 1),
-                    "market_prob": round((1/a_odds)*100, 1),
-                    "ev": round(away_ev * 100, 1),
-                    "suggested_stake": round(away_stake, 2),
-                    "confidence": "HIGH" if away_ev > 0.10 else "MEDIUM"
-                })
-        except Exception as e:
-            continue  # Skip any problematic matches
-    
-    # Sort by EV
-    value_bets.sort(key=lambda x: x['ev'], reverse=True)
-    return value_bets
+# --- 6. UI: HEADER ---
+st.title("🏆 BetSmart Pro | Master Engine")
+st.subheader("📊 Smart Betting Matrix with Live Odds")
 
-# --- 6. ENHANCED UI ---
-st.title("🏆 BetSmart Pro | Advanced Analytics Engine")
-st.subheader("📊 AI-Powered Betting Intelligence")
+# --- 7. SYNC BUTTON ---
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    if st.button("🔄 Sync Master Data (Odds, Scores & Times)", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-if st.button("🔄 Sync & Analyze All Data"):
-    st.cache_data.clear()
-    st.rerun()
-
-# --- 7. FETCH AND PROCESS DATA ---
+# --- 8. FETCH MATCH DATA ---
 odds_data = fetch_data("odds")
-team_stats = get_team_stats()
+scores_data = fetch_data("scores")
 
-if odds_data and isinstance(odds_data, list) and len(odds_data) > 0:
+# Create a dictionary for match times and scores
+match_info = {}
+if scores_data:
+    for match in scores_data:
+        home_team = match.get('home_team', '')
+        away_team = match.get('away_team', '')
+        match_key = f"{home_team}_vs_{away_team}"
+        
+        # Get match time
+        commence_time = match.get('commence_time')
+        if commence_time:
+            match_info[match_key] = {
+                'time': commence_time,
+                'status': '🏁 FT' if match.get('completed') else ('🔴 LIVE' if match.get('scores') else '📅 Upcoming'),
+                'score': f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match.get('scores') else "vs"
+            }
+
+# --- 9. PROCESS MATCHES FOR MATRIX ---
+if odds_data:
     all_matches = []
+    
     for match in odds_data:
-        try:
-            home = match.get('home_team', '')
-            away = match.get('away_team', '')
-            
-            if not home or not away:
-                continue
-                
-            # Safely extract odds
-            if not match.get('bookmakers') or len(match['bookmakers']) == 0:
-                continue
-                
-            outcomes = match['bookmakers'][0]['markets'][0]['outcomes']
-            
-            h_odds = None
-            a_odds = None
-            d_odds = None
-            
-            for o in outcomes:
-                if o.get('name') == home:
-                    h_odds = o.get('price')
-                elif o.get('name') == away:
-                    a_odds = o.get('price')
-                elif o.get('name') == "Draw":
-                    d_odds = o.get('price')
-            
-            # Skip if any odds missing
-            if not all([h_odds, a_odds, d_odds]):
-                continue
-            
-            # Use advanced probability model
-            h_prob, d_prob, a_prob = calculate_match_probabilities(home, away, team_stats)
-            
-            all_matches.append({
-                "Home": home, "Away": away, 
-                "H_Prob": round(h_prob, 1), 
-                "D_Prob": round(d_prob, 1),
-                "A_Prob": round(a_prob, 1),
-                "H_Odds": h_odds, 
-                "D_Odds": d_odds,
-                "A_Odds": a_odds,
-                "EV_Home": round(calculate_expected_value(h_odds, h_prob) * 100, 1),
-                "EV_Draw": round(calculate_expected_value(d_odds, d_prob) * 100, 1),
-                "EV_Away": round(calculate_expected_value(a_odds, a_prob) * 100, 1)
-            })
-        except Exception as e:
+        home = match.get('home_team', '')
+        away = match.get('away_team', '')
+        
+        if not home or not away:
             continue
+            
+        # Extract odds
+        try:
+            outcomes = match['bookmakers'][0]['markets'][0]['outcomes']
+            h_odds = next((o['price'] for o in outcomes if o['name'] == home), 2.0)
+            a_odds = next((o['price'] for o in outcomes if o['name'] == away), 2.0)
+            d_odds = next((o['price'] for o in outcomes if o['name'] == "Draw"), 3.2)
+        except:
+            continue
+        
+        # Calculate probabilities
+        h_prob = (1/h_odds)*100 if h_odds > 0 else 33
+        a_prob = (1/a_odds)*100 if a_odds > 0 else 33
+        d_prob = calculate_draw_prob(h_prob, a_prob)
+        
+        # Get match time and info
+        match_key = f"{home}_vs_{away}"
+        match_time_info = match_info.get(match_key, {})
+        match_time = match_time_info.get('time', '')
+        match_status = match_time_info.get('status', '📅 Upcoming')
+        
+        # Format time for SAST
+        formatted_time = format_match_time(match_time) if match_time else "Time TBD"
+        
+        all_matches.append({
+            "Home": home,
+            "Away": away,
+            "H_Prob": round(h_prob, 1),
+            "D_Prob": d_prob,
+            "A_Prob": round(a_prob, 1),
+            "H_Odds": h_odds,
+            "D_Odds": d_odds,
+            "A_Odds": a_odds,
+            "Match_Time": formatted_time,
+            "Match_Status": match_status,
+            "EV_Home": round((h_odds * (h_prob/100)) - 1, 3) * 100,
+            "EV_Draw": round((d_odds * (d_prob/100)) - 1, 3) * 100,
+            "EV_Away": round((a_odds * (a_prob/100)) - 1, 3) * 100
+        })
     
     if all_matches:
-        # --- 8. VALUE BETS SECTION ---
-        st.header("🎯 Value Betting Opportunities")
-        value_bets = find_value_bets(all_matches, team_stats)
+        # Sort matches
+        all_matches.sort(key=lambda x: x['H_Prob'], reverse=True)
         
-        if value_bets and len(value_bets) > 0:
-            cols = st.columns(3)
-            for idx, bet in enumerate(value_bets[:6]):  # Show top 6
-                with cols[idx % 3]:
-                    with st.container():
-                        color = "🟢" if bet['confidence'] == "HIGH" else "🟡"
-                        st.markdown(f"""
-                        {color} **{bet['match']}**  
-                        **Bet:** {bet['bet']}  
-                        **Odds:** {bet['odds']}  
-                        **True Prob:** {bet['true_prob']}% | **Market:** {bet['market_prob']}%  
-                        **EV:** +{bet['ev']}%  
-                        **Suggested Stake:** R{bet['suggested_stake']}
-                        """)
+        # Create 4x4 Matrix with enhanced info
+        matrix_options = {
+            "🏦 Option A (Bankers - High Probability)": all_matches[0:4] if len(all_matches) >= 4 else all_matches,
+            "⚡ Option B (Home Edge)": all_matches[4:8] if len(all_matches) >= 8 else all_matches[4:],
+            "🎯 Option C (Draw/Value)": sorted(all_matches, key=lambda x: x['D_Prob'], reverse=True)[0:4],
+            "💎 Option D (Underdogs - High Value)": all_matches[-4:] if len(all_matches) >= 4 else all_matches
+        }
+        
+        # Display tabs for each option
+        tabs = st.tabs(list(matrix_options.keys()))
+        
+        for tab_idx, (group_name, matches) in enumerate(matrix_options.items()):
+            with tabs[tab_idx]:
+                st.markdown(f"### {group_name}")
+                
+                # Create columns for matches
+                cols = st.columns(min(4, len(matches)))
+                
+                for idx, match in enumerate(matches):
+                    with cols[idx % 4]:
+                        # Team logos and names
+                        col_logo1, col_vs, col_logo2 = st.columns([1, 1, 1])
+                        with col_logo1:
+                            st.image(get_team_logo_url(match['Home']), width=50)
+                            st.caption(match['Home'])
+                        with col_vs:
+                            st.markdown("<h3 style='text-align: center'>VS</h3>", unsafe_allow_html=True)
+                        with col_logo2:
+                            st.image(get_team_logo_url(match['Away']), width=50)
+                            st.caption(match['Away'])
+                        
+                        # Match time and status
+                        st.markdown(f"🕒 **Time:** {match['Match_Time']}")
+                        st.markdown(f"📊 **Status:** {match['Match_Status']}")
+                        
                         st.divider()
+                        
+                        # Probabilities and odds
+                        col_prob, col_odds = st.columns(2)
+                        with col_prob:
+                            st.metric("🏠 Home Win", f"{match['H_Prob']}%", 
+                                     delta=f"Draw: {match['D_Prob']}%")
+                            st.metric("🤝 Draw", f"{match['D_Prob']}%")
+                            st.metric("✈️ Away Win", f"{match['A_Prob']}%")
+                        
+                        with col_odds:
+                            st.metric("Home Odds", f"{match['H_Odds']:.2f}")
+                            st.metric("Draw Odds", f"{match['D_Odds']:.2f}")
+                            st.metric("Away Odds", f"{match['A_Odds']:.2f}")
+                        
+                        # Expected Value indicator
+                        ev_color = "🟢" if match['EV_Home'] > 5 else ("🟡" if match['EV_Home'] > 0 else "🔴")
+                        st.markdown(f"{ev_color} **EV Home:** {match['EV_Home']:+.1f}%")
+                        
+                        # Select button
+                        if st.button(f"Select {match['Home']} vs {match['Away']}", key=f"select_{tab_idx}_{idx}"):
+                            st.session_state.selected_match = match
+                            st.session_state.selected_odds = [match['H_Odds'], match['D_Odds'], match['A_Odds']]
+                            st.success(f"✅ Selected: {match['Home']} vs {match['Away']}")
+        
+        # --- 10. VALUE BETS SECTION ---
+        st.divider()
+        st.header("🎯 Top Value Betting Opportunities")
+        
+        # Filter matches with positive EV
+        value_matches = [m for m in all_matches if m['EV_Home'] > 5 or m['EV_Draw'] > 5 or m['EV_Away'] > 5]
+        value_matches.sort(key=lambda x: max(x['EV_Home'], x['EV_Draw'], x['EV_Away']), reverse=True)
+        
+        if value_matches:
+            cols = st.columns(3)
+            for idx, match in enumerate(value_matches[:6]):
+                with cols[idx % 3]:
+                    with st.container(border=True):
+                        st.markdown(f"**{match['Home']} vs {match['Away']}**")
+                        st.caption(f"🕒 {match['Match_Time']}")
+                        
+                        best_ev = max(match['EV_Home'], match['EV_Draw'], match['EV_Away'])
+                        best_bet = "HOME" if best_ev == match['EV_Home'] else ("DRAW" if best_ev == match['EV_Draw'] else "AWAY")
+                        
+                        st.metric(f"Best Bet: {best_bet}", f"+{best_ev:.1f}% EV")
+                        st.info(f"Odds: {match[f'{best_bet[0]}_Odds']:.2f}")
         else:
-            st.info("No strong value bets found at this time. Monitor for odds movements.")
+            st.info("No strong value bets found at this time")
         
-        # --- 9. SMART BETTING MATRIX ---
-        st.header("📊 Smart Betting Matrix")
+        # --- 11. ZAR SYSTEM CALCULATOR ---
+        st.divider()
+        st.header("💰 ZAR System 3/4 Calculator")
         
-        # Filter for positive EV bets only
-        positive_ev_matches = [m for m in all_matches if m['EV_Home'] > 2 or m['EV_Draw'] > 2 or m['EV_Away'] > 2]
+        col1, col2 = st.columns(2)
         
-        if len(positive_ev_matches) >= 3:
-            # Sort by highest EV for home wins
-            top_bankers = sorted(positive_ev_matches, key=lambda x: x['EV_Home'], reverse=True)[:4]
-            # Sort by highest EV for draws
-            top_draws = sorted(positive_ev_matches, key=lambda x: x['EV_Draw'], reverse=True)[:4]
-            # Sort by highest overall EV
-            all_ev = []
-            for m in positive_ev_matches:
-                max_ev = max(m['EV_Home'], m['EV_Draw'], m['EV_Away'])
-                all_ev.append((m, max_ev))
-            top_value = sorted(all_ev, key=lambda x: x[1], reverse=True)[:4]
+        with col1:
+            total_wager = st.number_input("Total Wager (ZAR)", value=100.0, step=10.0)
             
-            matrix = {
-                "🏦 Bankers (High EV Home)": top_bankers,
-                "🎯 Draw Specialists": top_draws,
-                "💎 Value Picks": [x[0] for x in top_value]
-            }
+            # Show selected match if any
+            if 'selected_match' in st.session_state:
+                selected = st.session_state.selected_match
+                st.info(f"📌 Selected: {selected['Home']} vs {selected['Away']} at {selected['Match_Time']}")
+                default_odds = [selected['H_Odds'], selected['D_Odds'], selected['A_Odds'], 3.0]
+            else:
+                default_odds = [1.57, 1.59, 2.09, 3.30]
             
-            tabs = st.tabs(list(matrix.keys()))
-            for i, (group, matches) in enumerate(matrix.items()):
-                with tabs[i]:
-                    cols = st.columns(min(4, len(matches)))
-                    for j, m in enumerate(matches):
-                        if j < 4:  # Only show up to 4
-                            with cols[j]:
-                                st.image(get_team_logo_url(m['Home']), width=60)
-                                st.metric(m['Home'], f"{m['H_Prob']}%", f"EV: +{m['EV_Home']}%")
-                                st.caption(f"Odds: {m['H_Odds']} | Draw: {m['D_Odds']}")
-        else:
-            st.warning("Not enough matches with positive EV for matrix display.")
+            o1 = st.number_input("Odds 1", value=float(default_odds[0]), step=0.01)
+            o2 = st.number_input("Odds 2", value=float(default_odds[1]), step=0.01)
         
-        # --- 10. ALL MATCHES TABLE ---
-        st.header("📋 All Matches Analysis")
-        df = pd.DataFrame(all_matches)
-        display_cols = ['Home', 'Away', 'H_Prob', 'D_Prob', 'A_Prob', 'H_Odds', 'D_Odds', 'A_Odds', 'EV_Home', 'EV_Draw', 'EV_Away']
-        st.dataframe(df[display_cols], use_container_width=True)
-    
-    else:
-        st.error("No valid matches could be processed. Please check the API data.")
-
-else:
-    st.warning("Unable to fetch odds data. Please check your API connection or try again later.")
-
-# --- 11. ADVANCED CALCULATOR SECTION ---
-st.divider()
-st.header("💰 Advanced Betting Calculators")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Kelly Criterion Calculator")
-    odds_input = st.number_input("Decimal Odds", min_value=1.01, value=2.0, step=0.1)
-    prob_input = st.number_input("Your Probability (%)", min_value=0.1, max_value=99.9, value=50.0, step=1.0)
-    bankroll_input = st.number_input("Bankroll (ZAR)", min_value=100.0, value=1000.0, step=100.0)
-    
-    if st.button("Calculate Kelly Stake"):
-        stake = kelly_criterion(odds_input, prob_input, bankroll_input)
-        ev = calculate_expected_value(odds_input, prob_input)
-        st.success(f"**Recommended Stake:** R{stake:.2f}")
-        st.metric("Expected Value", f"+{ev*100:.1f}%" if ev > 0 else f"{ev*100:.1f}%")
-        if ev <= 0:
-            st.warning("⚠️ Negative EV -不建议 betting")
-
-with col2:
-    st.subheader("System 3/4 Calculator")
-    total_wager = st.number_input("Total Wager (ZAR)", value=100.0, step=10.0)
-    
-    st.write("Enter your 4 odds:")
-    o1 = st.number_input("Odds 1", min_value=1.01, value=1.57, step=0.01)
-    o2 = st.number_input("Odds 2", min_value=1.01, value=1.59, step=0.01)
-    o3 = st.number_input("Odds 3", min_value=1.01, value=2.09, step=0.01)
-    o4 = st.number_input("Odds 4", min_value=1.01, value=3.30, step=0.01)
-    
-    spb = total_wager / 4
-    combos = [o1*o2*o3*spb, o1*o2*o4*spb, o1*o3*o4*spb, o2*o3*o4*spb]
-    
-    st.metric("💎 Max Win (4/4)", f"R{sum(combos):.2f}")
-    st.metric("📈 Profit if 4/4", f"R{sum(combos)-total_wager:.2f}")
-    st.metric("🛡️ Safety Net (3/4)", f"R{min(combos):.2f}")
-    st.metric("⚠️ Risk if 2/4", f"R{-total_wager:.2f}")
-
-# --- 12. LIVE SCORES (Optional) ---
-st.divider()
-with st.expander("🏟️ Live Scores & Match Times (SAST)", expanded=False):
-    scores_data = fetch_data("scores")
-    if scores_data and isinstance(scores_data, list):
-        for match in scores_data[:10]:  # Limit to 10 matches
-            try:
-                commence_time = match.get('commence_time')
-                if commence_time:
-                    utc_time = datetime.fromisoformat(commence_time.replace('Z', ''))
-                    sast_time = utc_time + timedelta(hours=2)
+        with col2:
+            o3 = st.number_input("Odds 3", value=float(default_odds[2]), step=0.01)
+            o4 = st.number_input("Odds 4", value=float(default_odds[3]), step=0.01)
+        
+        # Calculate system bets
+        if total_wager > 0:
+            spb = total_wager / 4
+            combos = [
+                o1 * o2 * o3 * spb,
+                o1 * o2 * o4 * spb,
+                o1 * o3 * o4 * spb,
+                o2 * o3 * o4 * spb
+            ]
+            
+            result_cols = st.columns(3)
+            with result_cols[0]:
+                st.metric("Total Wager", f"R{total_wager:.2f}")
+            with result_cols[1]:
+                st.success(f"### Max Win (4/4)\n**Payout:** R{sum(combos):.2f}\n**Profit:** R{sum(combos)-total_wager:.2f}")
+            with result_cols[2]:
+                st.warning(f"### Safety Net (3/4)\n**Payout:** R{min(combos):.2f}\n**Profit/Loss:** R{min(combos)-total_wager:.2f}")
+        
+        # --- 12. LIVE SCORES EXPANDER ---
+        st.divider()
+        with st.expander("🏟️ Live Scores & Upcoming Matches (SAST)", expanded=False):
+            if scores_data:
+                for match in scores_data[:15]:  # Show up to 15 matches
+                    home = match.get('home_team', 'Unknown')
+                    away = match.get('away_team', 'Unknown')
+                    commence_time = match.get('commence_time')
                     
-                    c1, c2, c3 = st.columns([2, 1, 2])
-                    home_team = match.get('home_team', 'Unknown')
-                    away_team = match.get('away_team', 'Unknown')
+                    # Convert to SAST
+                    match_time = format_match_time(commence_time) if commence_time else "Time TBD"
                     
+                    # Get score
                     score = "vs"
                     if match.get('scores') and len(match['scores']) >= 2:
                         score = f"{match['scores'][0].get('score', 0)} - {match['scores'][1].get('score', 0)}"
                     
-                    status = "🏁 FT" if match.get('completed') else ("🔴 LIVE" if match.get('scores') else "📅 Upcoming")
+                    # Status
+                    if match.get('completed'):
+                        status = "🏁 Full Time"
+                    elif match.get('scores'):
+                        status = "🔴 LIVE"
+                    else:
+                        status = "📅 Upcoming"
                     
-                    c1.write(f"**{home_team}**")
-                    c2.info(f"**{score}**")
-                    c3.write(f"**{away_team}**")
-                    st.caption(f"🕒 {sast_time.strftime('%d %b | %H:%M')} SAST | {status}")
-                    st.write("---")
-            except Exception as e:
-                continue
+                    # Display match
+                    cols = st.columns([2, 1, 2, 2])
+                    with cols[0]:
+                        st.image(get_team_logo_url(home), width=40)
+                        st.write(f"**{home}**")
+                    with cols[1]:
+                        st.markdown(f"<h3 style='text-align: center'>{score}</h3>", unsafe_allow_html=True)
+                    with cols[2]:
+                        st.image(get_team_logo_url(away), width=40)
+                        st.write(f"**{away}**")
+                    with cols[3]:
+                        st.write(f"🕒 {match_time}")
+                        st.write(f"{status}")
+                    
+                    st.divider()
+            else:
+                st.write("No match data available")
+        
+        # --- 13. TEAM STATISTICS ---
+        with st.expander("📊 Team Statistics & Form Guide", expanded=False):
+            st.markdown("### Current Season Form")
+            
+            # Create form guide dataframe
+            form_data = []
+            teams = list(set([m['Home'] for m in all_matches] + [m['Away'] for m in all_matches]))[:10]
+            
+            for team in teams:
+                team_matches = [m for m in all_matches if m['Home'] == team or m['Away'] == team]
+                avg_home_prob = sum(m['H_Prob'] for m in team_matches if m['Home'] == team) / max(len([m for m in team_matches if m['Home'] == team]), 1)
+                
+                form_data.append({
+                    'Team': team,
+                    'Home Win %': f"{avg_home_prob:.1f}%",
+                    'Matches': len(team_matches),
+                    'Best Odds': f"{min([m['H_Odds'] for m in team_matches if m['Home'] == team], default=0):.2f}"
+                })
+            
+            st.dataframe(pd.DataFrame(form_data), use_container_width=True)
+        
     else:
-        st.write("No live data available.")
+        st.error("No matches could be processed. Please check API connection.")
+else:
+    st.warning("Unable to fetch odds data. Please check your internet connection and API key.")
+
+# --- 14. FOOTER ---
+st.divider()
+st.markdown("""
+<div style='text-align: center; color: gray; padding: 20px;'>
+    <p>⚠️ Disclaimer: Betting involves risk. This tool is for informational purposes only.</p>
+    <p>🕒 All times are in South African Standard Time (SAST)</p>
+</div>
+""", unsafe_allow_html=True)
