@@ -16,10 +16,8 @@ UTC = pytz.UTC
 def convert_to_sast(utc_time_str):
     """Convert UTC time string to SAST"""
     try:
-        # Parse UTC time
         if utc_time_str:
             utc_time = datetime.fromisoformat(utc_time_str.replace('Z', '+00:00'))
-            # Convert to SAST
             sast_time = utc_time.astimezone(SAST)
             return sast_time
     except:
@@ -41,82 +39,221 @@ def get_team_logo_url(team_name):
         "Tottenham Hotspur": 73, "West Ham United": 563, "Brentford": 402,
         "Brighton & Hove Albion": 397, "Crystal Palace": 354, "Everton": 62,
         "Fulham": 63, "Leicester City": 338, "Wolverhampton Wanderers": 76,
-        "Nottingham Forest": 351, "Bournemouth": 1044, "Southampton": 340,
-        "Ipswich Town": 389, "Leeds United": 341
+        "Nottingham Forest": 351, "Bournemouth": 1044
     }
     for key, tid in team_ids.items():
         if key in team_name: 
             return f"https://crests.football-data.org/{tid}.png"
     return "https://cdn-icons-png.flaticon.com/512/5323/5323884.png"
 
-# --- 4. ADVANCED POISSON MODEL ---
-def calculate_draw_prob(h_prob, a_prob):
-    """Calculate draw probability based on team strength"""
-    balance_factor = 1 - abs(h_prob - a_prob) / 100
-    return round(26.0 * balance_factor, 1)
+# --- 4. ADVANCED BETTING RECOMMENDATION ENGINE ---
+def get_bet_recommendation(match):
+    """Generate specific bet recommendations with confidence levels"""
+    recommendations = []
+    
+    # Calculate true probabilities using Poisson
+    h_prob = match['H_Prob']
+    d_prob = match['D_Prob']
+    a_prob = match['A_Prob']
+    
+    # Calculate Expected Value for each outcome
+    home_ev = match.get('EV_Home', 0)
+    draw_ev = match.get('EV_Draw', 0)
+    away_ev = match.get('EV_Away', 0)
+    
+    # 1. Value Bet Recommendation
+    if home_ev > 5:
+        recommendations.append({
+            'bet': f"🏠 {match['Home']} to WIN",
+            'odds': match['H_Odds'],
+            'ev': home_ev,
+            'confidence': 'HIGH' if home_ev > 10 else 'MEDIUM',
+            'reason': f"Positive EV of {home_ev:.1f}% - Bookmaker undervaluing home team",
+            'stake_pct': 3 if home_ev > 10 else 2
+        })
+    
+    if draw_ev > 5:
+        recommendations.append({
+            'bet': "🤝 DRAW",
+            'odds': match['D_Odds'],
+            'ev': draw_ev,
+            'confidence': 'HIGH' if draw_ev > 10 else 'MEDIUM',
+            'reason': f"Draw probability {d_prob:.1f}% offers value at odds {match['D_Odds']:.2f}",
+            'stake_pct': 2.5 if draw_ev > 10 else 1.5
+        })
+    
+    if away_ev > 5:
+        recommendations.append({
+            'bet': f"✈️ {match['Away']} to WIN",
+            'odds': match['A_Odds'],
+            'ev': away_ev,
+            'confidence': 'HIGH' if away_ev > 10 else 'MEDIUM',
+            'reason': f"Away team has {a_prob:.1f}% chance at odds {match['A_Odds']:.2f}",
+            'stake_pct': 2
+        })
+    
+    # 2. Probability-Based Recommendation (if no value bets)
+    if not recommendations:
+        if h_prob > 55:
+            recommendations.append({
+                'bet': f"🏠 {match['Home']} to WIN",
+                'odds': match['H_Odds'],
+                'ev': home_ev,
+                'confidence': 'MEDIUM',
+                'reason': f"High probability ({h_prob:.1f}%) of home win",
+                'stake_pct': 2
+            })
+        elif d_prob > 30:
+            recommendations.append({
+                'bet': "🤝 DRAW",
+                'odds': match['D_Odds'],
+                'ev': draw_ev,
+                'confidence': 'MEDIUM',
+                'reason': f"High draw probability ({d_prob:.1f}%)",
+                'stake_pct': 1.5
+            })
+        elif a_prob > 45:
+            recommendations.append({
+                'bet': f"✈️ {match['Away']} to WIN",
+                'odds': match['A_Odds'],
+                'ev': away_ev,
+                'confidence': 'MEDIUM',
+                'reason': f"Strong away team with {a_prob:.1f}% chance",
+                'stake_pct': 2
+            })
+    
+    # Sort by EV (highest first)
+    recommendations.sort(key=lambda x: x['ev'], reverse=True)
+    
+    return recommendations
 
-def calculate_match_strength(home_team, away_team):
-    """Calculate team strength based on historical performance"""
-    strength_ratings = {
-        "Manchester City": 95, "Liverpool": 92, "Arsenal": 89, "Chelsea": 85,
-        "Manchester United": 83, "Tottenham Hotspur": 82, "Newcastle United": 80,
-        "Aston Villa": 78, "Brighton & Hove Albion": 76, "West Ham United": 75,
-        "Brentford": 73, "Fulham": 72, "Crystal Palace": 70, "Wolverhampton Wanderers": 69,
-        "Everton": 68, "Nottingham Forest": 67, "Bournemouth": 66, "Leicester City": 65
+def get_hedge_opportunity(match):
+    """Find hedge betting opportunities between two outcomes"""
+    hedge_opportunities = []
+    
+    # Check Home vs Draw hedge
+    if match['H_Odds'] > 0 and match['D_Odds'] > 0:
+        implied_prob_h = 1 / match['H_Odds']
+        implied_prob_d = 1 / match['D_Odds']
+        total_implied = implied_prob_h + implied_prob_d
+        
+        if total_implied < 1:
+            hedge_opportunities.append({
+                'type': 'Home or Draw (Double Chance)',
+                'outcome1': f"{match['Home']} Win",
+                'odds1': match['H_Odds'],
+                'outcome2': "Draw",
+                'odds2': match['D_Odds'],
+                'combined_prob': (1 - total_implied) * 100,
+                'description': f"Cover both Home Win and Draw - {((1 - total_implied) * 100):.1f}% theoretical edge"
+            })
+    
+    # Check Draw vs Away hedge
+    if match['D_Odds'] > 0 and match['A_Odds'] > 0:
+        implied_prob_d = 1 / match['D_Odds']
+        implied_prob_a = 1 / match['A_Odds']
+        total_implied = implied_prob_d + implied_prob_a
+        
+        if total_implied < 1:
+            hedge_opportunities.append({
+                'type': 'Draw or Away (Double Chance)',
+                'outcome1': "Draw",
+                'odds1': match['D_Odds'],
+                'outcome2': f"{match['Away']} Win",
+                'odds2': match['A_Odds'],
+                'combined_prob': (1 - total_implied) * 100,
+                'description': f"Cover both Draw and Away Win - {((1 - total_implied) * 100):.1f}% theoretical edge"
+            })
+    
+    # Check Home vs Away hedge (for high-scoring matches)
+    if match['H_Odds'] > 0 and match['A_Odds'] > 0:
+        implied_prob_h = 1 / match['H_Odds']
+        implied_prob_a = 1 / match['A_Odds']
+        total_implied = implied_prob_h + implied_prob_a
+        
+        if total_implied < 1:
+            hedge_opportunities.append({
+                'type': 'No Draw (BTTS or Either Team)',
+                'outcome1': f"{match['Home']} Win",
+                'odds1': match['H_Odds'],
+                'outcome2': f"{match['Away']} Win",
+                'odds2': match['A_Odds'],
+                'combined_prob': (1 - total_implied) * 100,
+                'description': f"Cover both teams to win (excluding draw)"
+            })
+    
+    return hedge_opportunities
+
+# --- 5. HEDGE BETTING CALCULATOR ---
+def calculate_hedge_bet(odds1, odds2, total_stake):
+    """Calculate optimal stakes for hedging two outcomes"""
+    # Calculate stakes to guarantee profit
+    stake1 = total_stake / (1 + (odds1 / odds2))
+    stake2 = total_stake - stake1
+    
+    # Calculate profits
+    profit1 = (stake1 * odds1) - total_stake
+    profit2 = (stake2 * odds2) - total_stake
+    min_profit = min(profit1, profit2)
+    
+    return {
+        'stake1': stake1,
+        'stake2': stake2,
+        'profit1': profit1,
+        'profit2': profit2,
+        'min_profit': min_profit,
+        'roi': (min_profit / total_stake) * 100
     }
-    
-    home_strength = strength_ratings.get(home_team, 70)
-    away_strength = strength_ratings.get(away_team, 70)
-    
-    return home_strength, away_strength
 
-# --- 5. DATA FETCHING ---
+def calculate_arbitrage(odds1, odds2, odds3):
+    """Calculate arbitrage opportunity across 3 outcomes"""
+    implied_prob = (1/odds1 + 1/odds2 + 1/odds3)
+    
+    if implied_prob < 1:
+        arbitrage_pct = (1 - implied_prob) * 100
+        stakes = []
+        total_stake = 100
+        
+        for odds in [odds1, odds2, odds3]:
+            stake = total_stake / (odds * implied_prob)
+            stakes.append(stake)
+        
+        return {
+            'is_arbitrage': True,
+            'arbitrage_pct': arbitrage_pct,
+            'stakes': stakes,
+            'guaranteed_profit': (total_stake / implied_prob) - total_stake
+        }
+    else:
+        return {'is_arbitrage': False}
+
+# --- 6. DATA FETCHING ---
 @st.cache_data(ttl=300)
 def fetch_data(endpoint):
-    """Fetch data from API"""
     url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/{endpoint}/?apiKey={API_KEY}&regions=uk&markets=h2h&oddsFormat=decimal"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             return response.json()
-        else:
-            return None
     except:
-        return None
+        pass
+    return None
 
-# --- 6. UI: HEADER ---
+# --- 7. MAIN UI ---
 st.title("🏆 BetSmart Pro | Master Engine")
-st.subheader("📊 Smart Betting Matrix with Live Odds")
+st.subheader("📊 AI-Powered Betting Recommendations & Hedge Calculator")
 
-# --- 7. SYNC BUTTON ---
+# Sync button
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    if st.button("🔄 Sync Master Data (Odds, Scores & Times)", use_container_width=True):
+    if st.button("🔄 Sync Master Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-# --- 8. FETCH MATCH DATA ---
+# Fetch data
 odds_data = fetch_data("odds")
 scores_data = fetch_data("scores")
 
-# Create a dictionary for match times and scores
-match_info = {}
-if scores_data:
-    for match in scores_data:
-        home_team = match.get('home_team', '')
-        away_team = match.get('away_team', '')
-        match_key = f"{home_team}_vs_{away_team}"
-        
-        # Get match time
-        commence_time = match.get('commence_time')
-        if commence_time:
-            match_info[match_key] = {
-                'time': commence_time,
-                'status': '🏁 FT' if match.get('completed') else ('🔴 LIVE' if match.get('scores') else '📅 Upcoming'),
-                'score': f"{match['scores'][0]['score']} - {match['scores'][1]['score']}" if match.get('scores') else "vs"
-            }
-
-# --- 9. PROCESS MATCHES FOR MATRIX ---
 if odds_data:
     all_matches = []
     
@@ -127,7 +264,6 @@ if odds_data:
         if not home or not away:
             continue
             
-        # Extract odds
         try:
             outcomes = match['bookmakers'][0]['markets'][0]['outcomes']
             h_odds = next((o['price'] for o in outcomes if o['name'] == home), 2.0)
@@ -137,239 +273,213 @@ if odds_data:
             continue
         
         # Calculate probabilities
-        h_prob = (1/h_odds)*100 if h_odds > 0 else 33
-        a_prob = (1/a_odds)*100 if a_odds > 0 else 33
-        d_prob = calculate_draw_prob(h_prob, a_prob)
+        h_prob = (1/h_odds)*100
+        a_prob = (1/a_odds)*100
+        d_prob = 100 - h_prob - a_prob
+        d_prob = max(15, min(35, d_prob))
         
-        # Get match time and info
-        match_key = f"{home}_vs_{away}"
-        match_time_info = match_info.get(match_key, {})
-        match_time = match_time_info.get('time', '')
-        match_status = match_time_info.get('status', '📅 Upcoming')
-        
-        # Format time for SAST
-        formatted_time = format_match_time(match_time) if match_time else "Time TBD"
+        # Calculate EV
+        home_ev = ((h_odds * (h_prob/100)) - 1) * 100
+        draw_ev = ((d_odds * (d_prob/100)) - 1) * 100
+        away_ev = ((a_odds * (a_prob/100)) - 1) * 100
         
         all_matches.append({
-            "Home": home,
-            "Away": away,
-            "H_Prob": round(h_prob, 1),
-            "D_Prob": d_prob,
-            "A_Prob": round(a_prob, 1),
-            "H_Odds": h_odds,
-            "D_Odds": d_odds,
-            "A_Odds": a_odds,
-            "Match_Time": formatted_time,
-            "Match_Status": match_status,
-            "EV_Home": round((h_odds * (h_prob/100)) - 1, 3) * 100,
-            "EV_Draw": round((d_odds * (d_prob/100)) - 1, 3) * 100,
-            "EV_Away": round((a_odds * (a_prob/100)) - 1, 3) * 100
+            "Home": home, "Away": away,
+            "H_Prob": round(h_prob, 1), "D_Prob": round(d_prob, 1), "A_Prob": round(a_prob, 1),
+            "H_Odds": h_odds, "D_Odds": d_odds, "A_Odds": a_odds,
+            "EV_Home": round(home_ev, 1), "EV_Draw": round(draw_ev, 1), "EV_Away": round(away_ev, 1)
         })
     
-    if all_matches:
-        # Sort matches
-        all_matches.sort(key=lambda x: x['H_Prob'], reverse=True)
-        
-        # Create 4x4 Matrix with enhanced info
-        matrix_options = {
-            "🏦 Option A (Bankers - High Probability)": all_matches[0:4] if len(all_matches) >= 4 else all_matches,
-            "⚡ Option B (Home Edge)": all_matches[4:8] if len(all_matches) >= 8 else all_matches[4:],
-            "🎯 Option C (Draw/Value)": sorted(all_matches, key=lambda x: x['D_Prob'], reverse=True)[0:4],
-            "💎 Option D (Underdogs - High Value)": all_matches[-4:] if len(all_matches) >= 4 else all_matches
-        }
-        
-        # Display tabs for each option
-        tabs = st.tabs(list(matrix_options.keys()))
-        
-        for tab_idx, (group_name, matches) in enumerate(matrix_options.items()):
-            with tabs[tab_idx]:
-                st.markdown(f"### {group_name}")
-                
-                # Create columns for matches
-                cols = st.columns(min(4, len(matches)))
-                
-                for idx, match in enumerate(matches):
-                    with cols[idx % 4]:
-                        # Team logos and names
-                        col_logo1, col_vs, col_logo2 = st.columns([1, 1, 1])
-                        with col_logo1:
-                            st.image(get_team_logo_url(match['Home']), width=50)
-                            st.caption(match['Home'])
-                        with col_vs:
-                            st.markdown("<h3 style='text-align: center'>VS</h3>", unsafe_allow_html=True)
-                        with col_logo2:
-                            st.image(get_team_logo_url(match['Away']), width=50)
-                            st.caption(match['Away'])
+    # --- 8. SMART BETTING MATRIX WITH RECOMMENDATIONS ---
+    st.header("🎯 Smart Betting Matrix with AI Recommendations")
+    
+    # Sort and create matrix
+    all_matches.sort(key=lambda x: max(x['EV_Home'], x['EV_Draw'], x['EV_Away']), reverse=True)
+    
+    top_value_matches = all_matches[:8]  # Top 8 value matches
+    
+    # Display matches with recommendations
+    for idx, match in enumerate(top_value_matches):
+        with st.container():
+            st.markdown(f"### Match {idx + 1}: {match['Home']} vs {match['Away']}")
+            
+            # Get recommendations
+            recommendations = get_bet_recommendation(match)
+            hedge_opportunities = get_hedge_opportunity(match)
+            
+            col1, col2, col3 = st.columns([2, 2, 1])
+            
+            with col1:
+                st.image(get_team_logo_url(match['Home']), width=80)
+                st.markdown(f"**{match['Home']}**")
+                st.metric("Win Probability", f"{match['H_Prob']}%", 
+                         delta=f"EV: {match['EV_Home']:+.1f}%")
+                st.caption(f"Odds: {match['H_Odds']:.2f}")
+            
+            with col2:
+                st.image(get_team_logo_url(match['Away']), width=80)
+                st.markdown(f"**{match['Away']}**")
+                st.metric("Win Probability", f"{match['A_Prob']}%",
+                         delta=f"EV: {match['EV_Away']:+.1f}%")
+                st.caption(f"Odds: {match['A_Odds']:.2f}")
+            
+            with col3:
+                st.metric("Draw Probability", f"{match['D_Prob']}%",
+                         delta=f"EV: {match['EV_Draw']:+.1f}%")
+                st.caption(f"Odds: {match['D_Odds']:.2f}")
+            
+            # Bet Recommendations
+            if recommendations:
+                st.markdown("#### 💡 Recommended Bets")
+                rec_cols = st.columns(len(recommendations))
+                for rec_idx, rec in enumerate(recommendations):
+                    with rec_cols[rec_idx]:
+                        color = "🟢" if rec['confidence'] == 'HIGH' else "🟡"
+                        st.info(f"{color} **{rec['bet']}**")
+                        st.write(f"Odds: {rec['odds']:.2f}")
+                        st.write(f"EV: +{rec['ev']:.1f}%")
+                        st.write(f"Suggested Stake: {rec['stake_pct']}%")
+                        st.caption(rec['reason'])
+            
+            # Hedge Opportunities
+            if hedge_opportunities:
+                st.markdown("#### 🔒 Hedge Opportunities")
+                for hedge in hedge_opportunities:
+                    with st.expander(f"🎲 {hedge['type']}"):
+                        st.write(hedge['description'])
+                        st.write(f"Outcome 1: {hedge['outcome1']} @ {hedge['odds1']:.2f}")
+                        st.write(f"Outcome 2: {hedge['outcome2']} @ {hedge['odds2']:.2f}")
                         
-                        # Match time and status
-                        st.markdown(f"🕒 **Time:** {match['Match_Time']}")
-                        st.markdown(f"📊 **Status:** {match['Match_Status']}")
+                        # Quick hedge calculator
+                        hedge_amount = st.number_input(f"Hedge Amount (R)", 
+                                                      min_value=100, 
+                                                      value=500, 
+                                                      step=100,
+                                                      key=f"hedge_{idx}_{rec_idx if 'rec_idx' in locals() else 0}")
                         
-                        st.divider()
-                        
-                        # Probabilities and odds
-                        col_prob, col_odds = st.columns(2)
-                        with col_prob:
-                            st.metric("🏠 Home Win", f"{match['H_Prob']}%", 
-                                     delta=f"Draw: {match['D_Prob']}%")
-                            st.metric("🤝 Draw", f"{match['D_Prob']}%")
-                            st.metric("✈️ Away Win", f"{match['A_Prob']}%")
-                        
-                        with col_odds:
-                            st.metric("Home Odds", f"{match['H_Odds']:.2f}")
-                            st.metric("Draw Odds", f"{match['D_Odds']:.2f}")
-                            st.metric("Away Odds", f"{match['A_Odds']:.2f}")
-                        
-                        # Expected Value indicator
-                        ev_color = "🟢" if match['EV_Home'] > 5 else ("🟡" if match['EV_Home'] > 0 else "🔴")
-                        st.markdown(f"{ev_color} **EV Home:** {match['EV_Home']:+.1f}%")
-                        
-                        # Select button
-                        if st.button(f"Select {match['Home']} vs {match['Away']}", key=f"select_{tab_idx}_{idx}"):
-                            st.session_state.selected_match = match
-                            st.session_state.selected_odds = [match['H_Odds'], match['D_Odds'], match['A_Odds']]
-                            st.success(f"✅ Selected: {match['Home']} vs {match['Away']}")
-        
-        # --- 10. VALUE BETS SECTION ---
-        st.divider()
-        st.header("🎯 Top Value Betting Opportunities")
-        
-        # Filter matches with positive EV
-        value_matches = [m for m in all_matches if m['EV_Home'] > 5 or m['EV_Draw'] > 5 or m['EV_Away'] > 5]
-        value_matches.sort(key=lambda x: max(x['EV_Home'], x['EV_Draw'], x['EV_Away']), reverse=True)
-        
-        if value_matches:
-            cols = st.columns(3)
-            for idx, match in enumerate(value_matches[:6]):
-                with cols[idx % 3]:
-                    with st.container(border=True):
-                        st.markdown(f"**{match['Home']} vs {match['Away']}**")
-                        st.caption(f"🕒 {match['Match_Time']}")
-                        
-                        best_ev = max(match['EV_Home'], match['EV_Draw'], match['EV_Away'])
-                        best_bet = "HOME" if best_ev == match['EV_Home'] else ("DRAW" if best_ev == match['EV_Draw'] else "AWAY")
-                        
-                        st.metric(f"Best Bet: {best_bet}", f"+{best_ev:.1f}% EV")
-                        st.info(f"Odds: {match[f'{best_bet[0]}_Odds']:.2f}")
-        else:
-            st.info("No strong value bets found at this time")
-        
-        # --- 11. ZAR SYSTEM CALCULATOR ---
-        st.divider()
-        st.header("💰 ZAR System 3/4 Calculator")
+                        if hedge_amount > 0:
+                            hedge_result = calculate_hedge_bet(hedge['odds1'], hedge['odds2'], hedge_amount)
+                            st.write(f"💰 **Stake 1 ({hedge['outcome1']}):** R{hedge_result['stake1']:.2f}")
+                            st.write(f"💰 **Stake 2 ({hedge['outcome2']}):** R{hedge_result['stake2']:.2f}")
+                            st.success(f"✅ **Guaranteed Profit:** R{hedge_result['min_profit']:.2f} ({hedge_result['roi']:.1f}% ROI)")
+            
+            st.divider()
+    
+    # --- 9. HEDGE BETTING CALCULATOR SECTION ---
+    st.header("🔒 Advanced Hedge Betting Calculator")
+    st.markdown("Place bets on two different bookmakers to guarantee profit")
+    
+    tab1, tab2, tab3 = st.tabs(["Two-Way Hedge", "Three-Way Arbitrage", "Dutching Calculator"])
+    
+    with tab1:
+        st.subheader("Two-Way Hedge (Cover 2 Outcomes)")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            total_wager = st.number_input("Total Wager (ZAR)", value=100.0, step=10.0)
-            
-            # Show selected match if any
-            if 'selected_match' in st.session_state:
-                selected = st.session_state.selected_match
-                st.info(f"📌 Selected: {selected['Home']} vs {selected['Away']} at {selected['Match_Time']}")
-                default_odds = [selected['H_Odds'], selected['D_Odds'], selected['A_Odds'], 3.0]
-            else:
-                default_odds = [1.57, 1.59, 2.09, 3.30]
-            
-            o1 = st.number_input("Odds 1", value=float(default_odds[0]), step=0.01)
-            o2 = st.number_input("Odds 2", value=float(default_odds[1]), step=0.01)
+            st.markdown("**Outcome 1 (Bookmaker A)**")
+            outcome1_name = st.text_input("Outcome 1 Name", "Team A Win")
+            odds1 = st.number_input("Odds 1", min_value=1.01, value=2.0, step=0.05)
         
         with col2:
-            o3 = st.number_input("Odds 3", value=float(default_odds[2]), step=0.01)
-            o4 = st.number_input("Odds 4", value=float(default_odds[3]), step=0.01)
+            st.markdown("**Outcome 2 (Bookmaker B)**")
+            outcome2_name = st.text_input("Outcome 2 Name", "Team B Win")
+            odds2 = st.number_input("Odds 2", min_value=1.01, value=3.0, step=0.05)
         
-        # Calculate system bets
-        if total_wager > 0:
-            spb = total_wager / 4
-            combos = [
-                o1 * o2 * o3 * spb,
-                o1 * o2 * o4 * spb,
-                o1 * o3 * o4 * spb,
-                o2 * o3 * o4 * spb
-            ]
-            
-            result_cols = st.columns(3)
-            with result_cols[0]:
-                st.metric("Total Wager", f"R{total_wager:.2f}")
-            with result_cols[1]:
-                st.success(f"### Max Win (4/4)\n**Payout:** R{sum(combos):.2f}\n**Profit:** R{sum(combos)-total_wager:.2f}")
-            with result_cols[2]:
-                st.warning(f"### Safety Net (3/4)\n**Payout:** R{min(combos):.2f}\n**Profit/Loss:** R{min(combos)-total_wager:.2f}")
+        total_hedge_stake = st.number_input("Total Stake (R)", min_value=100, value=1000, step=100)
         
-        # --- 12. LIVE SCORES EXPANDER ---
-        st.divider()
-        with st.expander("🏟️ Live Scores & Upcoming Matches (SAST)", expanded=False):
-            if scores_data:
-                for match in scores_data[:15]:  # Show up to 15 matches
-                    home = match.get('home_team', 'Unknown')
-                    away = match.get('away_team', 'Unknown')
-                    commence_time = match.get('commence_time')
-                    
-                    # Convert to SAST
-                    match_time = format_match_time(commence_time) if commence_time else "Time TBD"
-                    
-                    # Get score
-                    score = "vs"
-                    if match.get('scores') and len(match['scores']) >= 2:
-                        score = f"{match['scores'][0].get('score', 0)} - {match['scores'][1].get('score', 0)}"
-                    
-                    # Status
-                    if match.get('completed'):
-                        status = "🏁 Full Time"
-                    elif match.get('scores'):
-                        status = "🔴 LIVE"
-                    else:
-                        status = "📅 Upcoming"
-                    
-                    # Display match
-                    cols = st.columns([2, 1, 2, 2])
-                    with cols[0]:
-                        st.image(get_team_logo_url(home), width=40)
-                        st.write(f"**{home}**")
-                    with cols[1]:
-                        st.markdown(f"<h3 style='text-align: center'>{score}</h3>", unsafe_allow_html=True)
-                    with cols[2]:
-                        st.image(get_team_logo_url(away), width=40)
-                        st.write(f"**{away}**")
-                    with cols[3]:
-                        st.write(f"🕒 {match_time}")
-                        st.write(f"{status}")
-                    
-                    st.divider()
-            else:
-                st.write("No match data available")
+        if st.button("Calculate Hedge Bet"):
+            hedge_result = calculate_hedge_bet(odds1, odds2, total_hedge_stake)
+            
+            st.markdown("---")
+            st.markdown("### 📊 Hedge Bet Results")
+            
+            col_a, col_b, col_c = st.columns(3)
+            
+            with col_a:
+                st.metric(f"Stake on {outcome1_name}", f"R{hedge_result['stake1']:.2f}")
+                st.metric(f"Payout if Wins", f"R{hedge_result['stake1'] * odds1:.2f}")
+                st.metric(f"Profit if Wins", f"R{hedge_result['profit1']:.2f}")
+            
+            with col_b:
+                st.metric(f"Stake on {outcome2_name}", f"R{hedge_result['stake2']:.2f}")
+                st.metric(f"Payout if Wins", f"R{hedge_result['stake2'] * odds2:.2f}")
+                st.metric(f"Profit if Wins", f"R{hedge_result['profit2']:.2f}")
+            
+            with col_c:
+                st.success(f"💰 **Guaranteed Minimum Profit**")
+                st.metric("Profit", f"R{hedge_result['min_profit']:.2f}")
+                st.metric("ROI", f"{hedge_result['roi']:.1f}%")
+                st.metric("Total Risk", f"R{total_hedge_stake:.2f}")
+    
+    with tab2:
+        st.subheader("Three-Way Arbitrage (Cover All Outcomes)")
         
-        # --- 13. TEAM STATISTICS ---
-        with st.expander("📊 Team Statistics & Form Guide", expanded=False):
-            st.markdown("### Current Season Form")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            outcome_a = st.text_input("Outcome A", "Home Win", key="arb_a")
+            odds_a = st.number_input("Odds A", min_value=1.01, value=2.5, step=0.05, key="arb_odds_a")
+        
+        with col2:
+            outcome_b = st.text_input("Outcome B", "Draw", key="arb_b")
+            odds_b = st.number_input("Odds B", min_value=1.01, value=3.2, step=0.05, key="arb_odds_b")
+        
+        with col3:
+            outcome_c = st.text_input("Outcome C", "Away Win", key="arb_c")
+            odds_c = st.number_input("Odds C", min_value=1.01, value=2.8, step=0.05, key="arb_odds_c")
+        
+        arbitrage_stake = st.number_input("Total Stake (R)", min_value=100, value=1000, step=100, key="arb_stake")
+        
+        if st.button("Find Arbitrage Opportunity"):
+            arb_result = calculate_arbitrage(odds_a, odds_b, odds_c)
             
-            # Create form guide dataframe
-            form_data = []
-            teams = list(set([m['Home'] for m in all_matches] + [m['Away'] for m in all_matches]))[:10]
-            
-            for team in teams:
-                team_matches = [m for m in all_matches if m['Home'] == team or m['Away'] == team]
-                avg_home_prob = sum(m['H_Prob'] for m in team_matches if m['Home'] == team) / max(len([m for m in team_matches if m['Home'] == team]), 1)
+            if arb_result['is_arbitrage']:
+                st.success(f"✅ **Arbitrage Opportunity Found!** ({arb_result['arbitrage_pct']:.2f}% guaranteed return)")
                 
-                form_data.append({
-                    'Team': team,
-                    'Home Win %': f"{avg_home_prob:.1f}%",
-                    'Matches': len(team_matches),
-                    'Best Odds': f"{min([m['H_Odds'] for m in team_matches if m['Home'] == team], default=0):.2f}"
-                })
-            
-            st.dataframe(pd.DataFrame(form_data), use_container_width=True)
+                st.markdown("### 📊 Arbitrage Stakes")
+                
+                col_a, col_b, col_c = st.columns(3)
+                
+                with col_a:
+                    stake_a = (arbitrage_stake / (odds_a * (1/odds_a + 1/odds_b + 1/odds_c))) if odds_a > 0 else 0
+                    st.metric(f"Stake on {outcome_a}", f"R{stake_a:.2f}")
+                    st.metric(f"Payout", f"R{stake_a * odds_a:.2f}")
+                
+                with col_b:
+                    stake_b = (arbitrage_stake / (odds_b * (1/odds_a + 1/odds_b + 1/odds_c))) if odds_b > 0 else 0
+                    st.metric(f"Stake on {outcome_b}", f"R{stake_b:.2f}")
+                    st.metric(f"Payout", f"R{stake_b * odds_b:.2f}")
+                
+                with col_c:
+                    stake_c = (arbitrage_stake / (odds_c * (1/odds_a + 1/odds_b + 1/odds_c))) if odds_c > 0 else 0
+                    st.metric(f"Stake on {outcome_c}", f"R{stake_c:.2f}")
+                    st.metric(f"Payout", f"R{stake_c * odds_c:.2f}")
+                
+                total_staked = stake_a + stake_b + stake_c
+                guaranteed_profit = (stake_a * odds_a) - total_staked
+                
+                st.success(f"💰 **Guaranteed Profit:** R{guaranteed_profit:.2f} ({arb_result['arbitrage_pct']:.2f}% ROI)")
+                
+            else:
+                st.warning("No arbitrage opportunity found. The combined implied probability is > 100%")
+                st.info(f"Combined Implied Probability: {(1/odds_a + 1/odds_b + 1/odds_c) * 100:.1f}%")
+    
+    with tab3:
+        st.subheader("Dutching Calculator (Cover Multiple Outcomes)")
+        st.markdown("Distribute stake across multiple outcomes to guarantee profit if any wins")
         
-    else:
-        st.error("No matches could be processed. Please check API connection.")
-else:
-    st.warning("Unable to fetch odds data. Please check your internet connection and API key.")
-
-# --- 14. FOOTER ---
-st.divider()
-st.markdown("""
-<div style='text-align: center; color: gray; padding: 20px;'>
-    <p>⚠️ Disclaimer: Betting involves risk. This tool is for informational purposes only.</p>
-    <p>🕒 All times are in South African Standard Time (SAST)</p>
-</div>
-""", unsafe_allow_html=True)
+        num_outcomes = st.selectbox("Number of outcomes", [2, 3, 4])
+        
+        outcomes = []
+        odds_list = []
+        
+        cols = st.columns(num_outcomes)
+        for i in range(num_outcomes):
+            with cols[i]:
+                outcome = st.text_input(f"Outcome {i+1}", f"Option {i+1}", key=f"dutch_outcome_{i}")
+                odds = st.number_input(f"Odds {i+1}", min_value=1.01, value=2.0 + i*0.5, step=0.05, key=f"dutch_odds_{i}")
+                outcomes.append(outcome)
+                odds_list.append(odds)
+        
+        dutch
