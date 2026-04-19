@@ -8,9 +8,10 @@ from datetime import datetime, timedelta
 def convert_to_sast(utc_time_str):
     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%d %H:%M:%S')
     sast_dt = utc_dt + timedelta(hours=2)
-    return sast_dt.strftime('%H:%M')
+    return sast_dt.strftime('%d %b, %H:%M')
 
 def get_understat_data(league):
+    # Season 2025 covers the current 2025/2026 matches
     url = f"https://understat.com/league/{league}/2025" 
     res = requests.get(url)
     soup = BeautifulSoup(res.content, "lxml")
@@ -21,57 +22,61 @@ def get_understat_data(league):
             return json.loads(data.encode('utf8').decode('unicode_escape'))
     return []
 
-# --- APP PAGE ---
-st.title("🛡️ BetSmart Pro: Under 4.5/5.5 Engine")
+# --- APP UI ---
+st.title("🛡️ BetSmart Pro: Weekly Under Engine")
+st.info(f"Scanning for matches between now and { (datetime.now() + timedelta(days=7)).strftime('%d %b') }")
 
-# Sidebar settings for your 2.1 odds strategy
+# Sidebar for strategy
 st.sidebar.header("Strategy Settings")
-stake = st.sidebar.number_input("Starting Stake (ZAR)", value=10.0)
-target_market = st.sidebar.selectbox("Preferred Market", ["Under 4.5", "Under 5.5"])
+market_pref = st.sidebar.radio("Target Market", ["Under 4.5", "Under 5.5"])
+stake = st.sidebar.number_input("Stake (ZAR)", value=10.0)
 
-if st.button("🚀 Run Deep Scan"):
-    leagues = ['EPL', 'La_liga', 'Serie_A', 'Ligue_1']
-    all_picks = []
+if st.button("🚀 Scan All Leagues"):
+    # Expanded list to ensure you find games even on quiet nights
+    leagues = ['EPL', 'La_liga', 'Serie_A', 'Ligue_1', 'Bundesliga']
+    all_upcoming = []
     
-    with st.spinner("Scanning major leagues for low-scoring trends..."):
+    with st.spinner("Analyzing schedules for upcoming week..."):
         for league in leagues:
             data = get_understat_data(league)
-            # Filter only upcoming games
+            # Filter for games that haven't started (isResult: False)
             upcoming = [m for m in data if not m['isResult']]
-            for m in upcoming[:5]:
-                # Add league info for the card
-                m['league'] = league
-                all_picks.append(m)
+            for m in upcoming:
+                m['league_name'] = league.replace('_', ' ')
+                all_upcoming.append(m)
 
-    if all_picks:
-        st.success(f"Scan Complete. Found {len(all_picks)} matches for {target_market}.")
+    if all_upcoming:
+        # Sort by date so the soonest games are at the top
+        all_upcoming.sort(key=lambda x: x['datetime'])
         
-        # Display as actionable cards
-        for match in all_picks:
-            sast_time = convert_to_sast(match['datetime'])
+        st.success(f"Found {len(all_upcoming)} upcoming matches across 5 leagues!")
+        
+        for match in all_upcoming[:15]: # Show top 15 games
+            local_time = convert_to_sast(match['datetime'])
             
             with st.container():
-                col1, col2, col3 = st.columns([2, 1, 1])
-                with col1:
+                c1, c2, c3 = st.columns([2, 1, 1])
+                with c1:
                     st.markdown(f"**{match['h']['title']} vs {match['a']['title']}**")
-                    st.caption(f"🏆 {match['league']} | 🕒 {sast_time} SAST")
-                with col2:
-                    st.write(f"✅ {target_market}")
-                with col3:
-                    if st.button("Add Game", key=f"add_{match['id']}"):
-                        st.session_state.setdefault('slip', []).append(match)
-                        st.toast(f"Added to R{stake * 2.1:.2f} Strategy Slip")
+                    st.caption(f"🏆 {match['league_name']} | 🕒 {local_time} SAST")
+                with c2:
+                    st.write(f"✅ {market_pref}")
+                with c3:
+                    if st.button("Add", key=f"btn_{match['id']}"):
+                        st.session_state.setdefault('my_slip', []).append(match)
+                        st.toast("Added to slip!")
                 st.divider()
     else:
-        st.error("No upcoming matches found in the scan.")
+        st.error("No matches found. Check your internet connection or URL season year.")
 
-# --- THE SLIP CALCULATOR ---
-if 'slip' in st.session_state and st.session_state['slip']:
-    st.sidebar.subheader("Your 2.1 Slip")
-    for item in st.session_state['slip']:
-        st.sidebar.write(f"🔹 {item['h']['title']} vs {item['a']['title']}")
+# --- THE SLIP TRACKER ---
+if 'my_slip' in st.session_state and st.session_state['my_slip']:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Selected Slip (2.1 Strategy)")
+    for i, item in enumerate(st.session_state['my_slip']):
+        st.sidebar.write(f"{i+1}. {item['h']['title']} vs {item['a']['title']}")
     
-    if st.sidebar.button("Clear Slip"):
-        st.session_state['slip'] = []
+    st.sidebar.write(f"**Target Return: R{stake * 2.1:.2f}**")
+    if st.sidebar.button("Clear All"):
+        st.session_state['my_slip'] = []
         st.rerun()
-  
