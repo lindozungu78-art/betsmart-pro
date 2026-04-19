@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 import time
 from urllib.parse import quote
+import re
 
 # ==================== CONFIGURATION ====================
 @dataclass
@@ -105,8 +106,7 @@ class UnderstatDataService:
             
             for script in scripts:
                 if 'datesData' in script.text:
-                    # Safer JSON extraction with re.DOTALL to handle multiline scripts
-                    import re
+                    # LINE 107: Added re.DOTALL to handle multiline scripts
                     json_match = re.search(r"datesData\s*=\s*JSON\.parse\('(.*?)'\)", script.text, re.DOTALL)
                     if json_match:
                         json_str = json_match.group(1)
@@ -196,7 +196,7 @@ class SidebarUI:
     
     @staticmethod
     def render() -> tuple:
-        """Returns (selected_leagues, stake, market_pref)"""
+        """Returns (selected_leagues, stake, market_pref, scan_button)"""
         st.sidebar.header("⚙️ Strategy Settings")
         
         # League selection
@@ -331,7 +331,7 @@ class BetSmartApp:
         st.title("🛡️ BetSmart Pro: Multi-Source Engine")
         st.caption("Scraping: Understat + StatsHub Verification | Data refreshes every 5 minutes")
         
-        # Get sidebar inputs
+        # Get sidebar inputs - FIXED: Now returns 4 values
         selected_leagues, stake, market_pref, scan_button = self.sidebar_ui.render()
         
         # Display unused variable warning (or use it for future features)
