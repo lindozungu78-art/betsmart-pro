@@ -106,7 +106,7 @@ class UnderstatDataService:
             
             for script in scripts:
                 if 'datesData' in script.text:
-                    # LINE 107: Added re.DOTALL to handle multiline scripts
+                    # Added re.DOTALL to handle multiline scripts
                     json_match = re.search(r"datesData\s*=\s*JSON\.parse\('(.*?)'\)", script.text, re.DOTALL)
                     if json_match:
                         json_str = json_match.group(1)
@@ -331,7 +331,7 @@ class BetSmartApp:
         st.title("🛡️ BetSmart Pro: Multi-Source Engine")
         st.caption("Scraping: Understat + StatsHub Verification | Data refreshes every 5 minutes")
         
-        # Get sidebar inputs - FIXED: Now returns 4 values
+        # CRITICAL FIX: Added parentheses to call the render method
         selected_leagues, stake, market_pref, scan_button = self.sidebar_ui.render()
         
         # Display unused variable warning (or use it for future features)
