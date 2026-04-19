@@ -11,7 +11,7 @@ def convert_to_sast(utc_time_str):
     return sast_dt.strftime('%d %b, %H:%M')
 
 def get_understat_data(league):
-    # CRITICAL: 2025 is the correct ID for April 2026 matches
+    # CRITICAL: Understat uses the START year of the season (2025 = 2025/26 season)
     url = f"https://understat.com/league/{league}/2025" 
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
@@ -23,67 +23,64 @@ def get_understat_data(league):
                 json_str = s.text.split("JSON.parse('")[1].split("')")[0]
                 decoded_data = json_str.encode('utf8').decode('unicode_escape')
                 return json.loads(decoded_data)
-    except Exception as e:
-        st.error(f"Error connecting to {league}: {e}")
+    except:
+        return []
     return []
 
 # --- APP UI ---
-st.title("🛡️ BetSmart Pro: Weekly Under Engine")
-st.caption("📍 Pietermaritzburg | 2.1 Odds Strategy")
+st.title("🛡️ BetSmart Pro: 7-Day Scout")
+st.caption("📍 Pietermaritzburg | Under 4.5/5.5 Strategy")
 
 # Sidebar
 st.sidebar.header("Strategy Settings")
 market_pref = st.sidebar.selectbox("Market", ["Under 4.5", "Under 5.5"])
 stake = st.sidebar.number_input("Stake (ZAR)", value=10.0)
 
-if st.button("🚀 Scan All Leagues"):
-    leagues = ['EPL', 'Serie_A', 'Ligue_1', 'La_liga', 'Bundesliga']
-    all_games = []
+if st.button("🚀 Run Full Week Scan"):
+    # Leagues you requested + extras for volume
+    leagues = ['EPL', 'Serie_A', 'Ligue_1', 'La_liga']
+    all_upcoming = []
     
-    with st.spinner("Scanning for Monday - Sunday fixtures..."):
+    with st.spinner("Scanning European fixtures..."):
         for league in leagues:
             data = get_understat_data(league)
-            if data:
-                for m in data:
-                    m['league_name'] = league.replace('_', ' ')
-                    all_games.append(m)
+            # Find games that haven't started yet
+            upcoming = [m for m in data if not m['isResult']]
+            for m in upcoming:
+                m['league_name'] = league.replace('_', ' ')
+                all_upcoming.append(m)
 
-    if all_games:
-        # 1. Filter for UPCOMING (Next 7 Days)
-        upcoming = [m for m in all_games if not m['isResult']]
+    if all_upcoming:
+        # Sort by date so Monday/Tuesday games are at the top
+        all_upcoming.sort(key=lambda x: x['datetime'])
         
-        if upcoming:
-            upcoming.sort(key=lambda x: x['datetime'])
-            st.success(f"Found {len(upcoming)} upcoming matches!")
-            for match in upcoming[:15]:
-                local_time = convert_to_sast(match['datetime'])
-                with st.container():
-                    c1, c2, c3 = st.columns([2, 1, 1])
-                    with c1:
-                        st.markdown(f"**{match['h']['title']} vs {match['a']['title']}**")
-                        st.caption(f"🏆 {match['league_name']} | 🕒 {local_time} SAST")
-                    with c2: st.write(f"✅ {market_pref}")
-                    with c3:
-                        if st.button("Add", key=f"add_{match['id']}"):
-                            st.session_state.setdefault('my_slip', []).append(match)
-                            st.toast("Added!")
-                    st.divider()
-        else:
-            # 2. DEBUG: If no upcoming, show today's results to prove it's working
-            st.warning("No matches starting in the next few hours. Showing today's completed results to verify connection:")
-            results = [m for m in all_games if m['isResult']][-5:] # Last 5 finished
-            for r in results:
-                st.text(f"🏁 {r['h']['title']} {r['goals']['h']} - {r['goals']['a']} {r['a']['title']} (Finished)")
+        st.success(f"Found {len(all_upcoming)} upcoming matches!")
+        
+        # Show top picks for the week
+        for match in all_upcoming[:15]:
+            local_time = convert_to_sast(match['datetime'])
+            with st.container():
+                c1, c2, c3 = st.columns([2, 1, 1])
+                with c1:
+                    st.markdown(f"**{match['h']['title']} vs {match['a']['title']}**")
+                    st.caption(f"🏆 {match['league_name']} | 🕒 {local_time} SAST")
+                with c2: st.write(f"✅ {market_pref}")
+                with c3:
+                    if st.button("Add", key=f"add_{match['id']}"):
+                        st.session_state.setdefault('my_slip', []).append(match)
+                        st.toast("Added to Strategy Slip")
+                st.divider()
     else:
-        st.error("Total connection failure. Check 'lxml' is in requirements.txt")
+        st.warning("No matches found. This usually happens during International breaks or between seasons.")
 
-# --- SLIP ---
+# --- THE SLIP ---
 if 'my_slip' in st.session_state and st.session_state['my_slip']:
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Selected Slip")
+    st.sidebar.subheader("Strategy Slip (2.1 Odds)")
     for i, item in enumerate(st.session_state['my_slip']):
         st.sidebar.write(f"{i+1}. {item['h']['title']} vs {item['a']['title']}")
-    st.sidebar.write(f"**Target: R{stake * 2.1:.2f}**")
-    if st.sidebar.button("Clear"):
+    
+    st.sidebar.write(f"**Target Return: R{stake * 2.1:.2f}**")
+    if st.sidebar.button("Clear Slip"):
         st.session_state['my_slip'] = []
         st.rerun()
